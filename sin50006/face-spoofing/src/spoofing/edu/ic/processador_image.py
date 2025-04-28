@@ -4,6 +4,7 @@ from typing import Tuple
 from PIL import Image
 import numpy as np
 import os
+import glob
 from random import sample
 from spoofing.edu.ic.logger import get_logger
 
@@ -15,7 +16,7 @@ def processar_imagem(image_path : str, tamanho: Tuple[int, int]=(244, 244)) -> n
     Função para carregar e processar a imagem, retornando
     um numpy array no formato (244, 244, 3) normalizado
     """
-    logger.debug(f"Lendo image de: {image_path}")
+    logger.debug(f"Lendo imagem de: {image_path}")
     imagem = Image.open(image_path)
 
     # Garantir que a imagem tenha 3 canais (RGB)
@@ -33,8 +34,9 @@ def processar_imagem(image_path : str, tamanho: Tuple[int, int]=(244, 244)) -> n
 
 
 def processar_imagem_caminho(image_path : str, tamanho: Tuple[int, int]=(244, 244), samples=10) -> list:
+    image_paths = glob.glob(image_path)
     image_files = [
-        f for f in os.listdir(image_path)
+        f for f in image_paths
         if f.lower().endswith(('.png', '.jpg', '.jpeg'))
     ]
     selected_files = sample(image_files, min(samples, len(image_files)))

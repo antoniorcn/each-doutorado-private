@@ -16,6 +16,8 @@ from enum import IntEnum
 logger = get_logger(__name__)
 logger.info("Detector inicializado")
 
+CASIA_FASD_PATH = "C:\\git\\dados\\sin50006\\casia-fasd"
+
 # Definindo uma Enumeração
 class SpoofingEstados(IntEnum):
     """Enumeration para controlar o estado da classe Spoofing"""
@@ -48,19 +50,49 @@ class Spoofing:
         self.metrics=metrics
         self.entradas : list = []
         self.labels : list = []
+        self.teste_entradas : list = []
+        self.teste_labels : list = []
         self.X_train : list = []
         self.Y_train : list = []
         self.X_test : list = []
         self.Y_test : list = []
         self.trainned_epochs = 0
 
-    def load_images_from_path(self, image_path,
+    def load_trainning_images_from_path(self, image_path,
                               tamanho: Tuple[int, int] = (244, 244),
                               label=0, samples=10):
         entradas = processar_imagem_caminho(image_path, tamanho=tamanho, samples=samples)
         self.entradas.extend( entradas )
         for _ in entradas:
             self.labels.append( label )
+
+    def load_test_images_from_path(self, image_path,
+                              tamanho: Tuple[int, int] = (244, 244),
+                              label=0, samples=10):
+        teste_entradas = processar_imagem_caminho(image_path, tamanho=tamanho, samples=samples)
+        self.teste_entradas.extend( teste_entradas )
+        for _ in teste_entradas:
+            self.teste_labels.append( label )
+
+    def loaded_images_summary(self):
+        logger.info("*** Loaded images summary ***")
+        total_bytes = 0
+        count_images = 0
+        labels = {}
+        for index, img in enumerate(self.entradas):
+            total_bytes += img.nbytes
+            count_images += 1
+            current_label = self.labels[index]
+            if current_label in labels:
+                labels[current_label] += 1
+            else:
+                labels[current_label] = 1
+        total_kb = total_bytes / 1024
+        total_mb = total_kb / 1024
+        for current_item in labels.items():
+            logger.info(f"Foram carregadas {current_item[1]} imagens " +
+                        f"de treinamento com label {current_item[0]}")
+        logger.info(f"Memória consumida: {total_mb:.2f}Mb")
 
     def residual_block(self, filters):
         block = Sequential()
@@ -167,22 +199,54 @@ class Spoofing:
             raise SpoofingException("Modelo precisa ser treinado primeiro")
 
 
+def load_samples( spoofing : Spoofing, samples=10 ):
+    subsets = [
+        {"relative_path": "\\train\\live\\",
+         "prefix": "bs", "label": 0, "instance_start": 1, "instance_end": 20,
+         "version_start": 1, "version_end": 2, "version_prefix": "v"},
+        {"relative_path": "\\train\\live\\",
+         "prefix": "fs", "label": 0, "instance_start": 1, "instance_end": 20,
+         "version_start": 1, "version_end": 2, "version_prefix": "v"},
+        {"relative_path": "\\train\\live\\",
+         "prefix": "s", "label": 0, "instance_start": 1, "instance_end": 20,
+         "version_start": 1, "version_end": 2, "version_prefix": "v"},
+        {"relative_path": "\\train\\spoof\\",
+         "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 20,
+         "version_start": 3, "version_end": 8, "version_prefix": "v"},
+        {"relative_path": "\\train\\spoof\\",
+         "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 20,
+         "version_start": 1, "version_end": 4, "version_prefix": "vHR_"}
+    ]
+    for subset in subsets:
+        for instance_index in range(subset["instance_start"], subset["instance_end"]):
+            for version_index in range(subset["version_start"], subset["version_end"]):
+                wildcard = f"{subset['relative_path']}{subset['prefix']}{instance_index}"
+                wildcard += f"{subset['version_prefix']}{version_index}*.*"
+                relative_file_path = CASIA_FASD_PATH + wildcard
+                spoofing.load_trainning_images_from_path(relative_file_path,
+                                               label=subset["label"], samples=samples)
+    # print(f"Foram carregadas: {len(spoofing.entradas)} imagens")
+
 def main():
     """Função principal"""
-    each_samples=10
+    each_samples=20
     epochs=10
     logger.info("Treinamento do sistema de identificação de Spoofing")
     spoof = Spoofing(optimizer=Adam(learning_rate=0.00001, clipvalue=1.0),
                      loss='binary_crossentropy',
                      metrics=['accuracy'])
-    spoof.load_images_from_path("C:\\git\\dados\\sin50006\\casia-fasd\\train\\live",
-                                label=0, samples=each_samples)
-    spoof.load_images_from_path("C:\\git\\dados\\sin50006\\casia-fasd\\train\\spoof",
-                                label=1, samples=each_samples)
+    # spoof.load_images_from_path(CASIA_FASD_PATH + "\\train\\live",
+    #                             label=0, samples=each_samples)
+    # spoof.load_images_from_path(CASIA_FASD_PATH + "\\train\\spoof",
+    #                             label=1, samples=each_samples)
+    load_samples(spoofing=spoof, samples=each_samples)
+    spoof.loaded_images_summary()
+    input("Tecle [ENTER] para iniciar o treinamento ou [CTRL] + [C] para cancelar")
     spoof.generate()
     spoof.compile(random_state=100, test_size=0.2)
     history = spoof.trainning(epochs=epochs)
-    logger.info(f"History: {history}")
+    logger.info(f"History: {history.history}")
+    logger.info(f"Accuracy: {history.accuracy}")
     metrics = spoof.evaluating()
     logger.info(f"Metrics: {metrics}")
     spoof.save_state("C:\\git\\dados\\sin50006\\pesos_modelo")

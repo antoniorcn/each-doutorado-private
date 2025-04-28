@@ -5,10 +5,14 @@ import numpy as np
 pygame.init()
 
 # Configurações da janela
-width, height = 800, 600
+width, height = 1280, 700
 tela = pygame.display.set_mode((width, height))
-tela_grafico = pygame.Surface(size=(600, 480), flags=0, depth=32)
-tela_legenda = pygame.Surface(size=(200, 480), flags=0, depth=32)
+tela_top_bar = pygame.Surface(size=(width, 200), flags=0, depth=32)
+legenda_height = height - tela_top_bar.get_height()
+tela_legenda = pygame.Surface(size=(200, legenda_height), flags=0, depth=32)
+chart_width = width - tela_legenda.get_width()
+chart_height = legenda_height
+tela_grafico = pygame.Surface(size=(width, chart_height), flags=0, depth=32)
 pygame.display.set_caption("Perceptron 2D - Visualização em Pygame")
 fonte_normal = pygame.font.Font("arial.ttf", 18)
 fonte_grande = pygame.font.Font("arial.ttf", 32)
@@ -74,6 +78,14 @@ def treinar(i, w, X_b, y):
     erro = yi - y_pred
     w += taxa * erro * xi
     return w
+
+def desenhar_titulo(screen):
+    screen.fill(BLACK)
+    fonte_grande_espaco = fonte_grande.get_height()
+    pos_y = 0
+    screen.blit( fonte_grande.render("Exemplo de Treinamento", True, YELLOW), (10, pos_y))
+    pos_y += fonte_grande_espaco
+    screen.blit( fonte_grande.render("2 classes com instâncias aleatórias", True, YELLOW), (30, pos_y))
 
 # Desenhar tudo
 def desenhar_tela(screen, w):
