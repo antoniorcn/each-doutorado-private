@@ -3,9 +3,9 @@ import numpy as np
 import PIL
 from PIL import Image
 from tensorflow.keras.layers import Embedding
-from spoofing.edu.ic.logger import get_logger
+from spoofing.edu.ic.logger import get_logger_arquivo
 
-logger = get_logger(__name__)
+logger = get_logger_arquivo(__name__)
 
 def normalize_images(images, normalization=255.0):
     images = images / normalization

@@ -6,9 +6,9 @@ import numpy as np
 import os
 import glob
 from random import sample
-from spoofing.edu.ic.logger import get_logger
+from spoofing.edu.ic.logger import get_logger_arquivo
 
-logger = get_logger(__name__)
+logger = get_logger_arquivo(__name__)
 
 
 def processar_imagem(image_path : str, tamanho: Tuple[int, int]=(244, 244)) -> np.ndarray:

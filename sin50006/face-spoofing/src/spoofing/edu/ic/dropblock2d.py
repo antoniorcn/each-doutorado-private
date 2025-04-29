@@ -1,9 +1,9 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
 import tensorflow.keras.backend as K
-from spoofing.edu.ic.logger import get_logger
+from spoofing.edu.ic.logger import get_logger_arquivo
 
-logger = get_logger(__name__)
+logger = get_logger_arquivo(__name__)
 
 class DropBlock2D(Layer):
     def __init__(self, block_size=7, drop_prob=0.3, **kwargs):

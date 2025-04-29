@@ -2,9 +2,9 @@ import tensorflow as tf
 from tensorflow.keras.layers import Layer, Conv2D
 from tensorflow.keras import Sequential
 import numpy as np
-from spoofing.edu.ic.logger import get_logger
+from spoofing.edu.ic.logger import get_logger_arquivo
 
-logger = get_logger(__name__)
+logger = get_logger_arquivo(__name__)
 
 class DropBlock(Layer):
     def __init__(self, block_size, drop_prob):
