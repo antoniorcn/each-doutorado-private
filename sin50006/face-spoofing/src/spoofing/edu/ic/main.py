@@ -280,7 +280,7 @@ class Spoofing:
         and self.modelo is not None:
             history = self.modelo.fit(self.X_train, self.Y_train, 
                                       validation_data=(self.X_valid,  self.Y_valid),
-                                      epochs=epochs, batch_size=batch_size, 
+                                      epochs=epochs, batch_size=batch_size,
                                       callbacks=self.callbacks)
             self.estado = SpoofingEstados.TRAINED
         else:
@@ -367,10 +367,10 @@ def load_trainning_samples( spoofing : Spoofing, samples=10 ):
 
 def main():
     """Função principal"""
-    trainning_samples=2
-    test_samples=1
-    validation_samples=1
-    epochs=1
+    trainning_samples=10
+    test_samples=5
+    validation_samples=5
+    epochs=10
     logger.info("Treinamento do sistema de identificação de Spoofing")
     spoof = Spoofing(optimizer=RMSprop(learning_rate=0.00001, clipvalue=1.0),
                      loss='binary_crossentropy',
