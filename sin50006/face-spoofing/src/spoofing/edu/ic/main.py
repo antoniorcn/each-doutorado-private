@@ -27,9 +27,9 @@ def get_env_var(name: str, default: str = None) -> str:
     value = os.getenv(name, default)
     return value
 
-SPOOF_DADOS_PATH = get_env_var("SPOOF_DADOS_PATH", default="C:\\git\\dados\\sin50006")
-SPOOF_CASIA_FASD_PATH = os.path.join(SPOOF_DADOS_PATH, "casia-fasd")
-SPOOF_MODEL_PATH = os.path.join(SPOOF_DADOS_PATH, "modelos")
+SPOOF_DADOS_PATH = get_env_var("SPOOF_DADOS_PATH", default="/teamspace/s3_folders")
+SPOOF_CASIA_FASD_PATH = os.path.join(SPOOF_DADOS_PATH, ".")
+SPOOF_MODEL_PATH = os.path.join(SPOOF_DADOS_PATH, "face-spoofing/modelos")
 
 # ## Apenas Teste 
 # file_name = f"model-samples-{10}" +\
@@ -120,6 +120,7 @@ class Spoofing:
         self.entradas.extend( entradas )
         for _ in entradas:
             self.labels.append( label )
+        return len(entradas)
 
     def load_test_images_from_path(self, image_path,
                               label=0, samples=10,
@@ -128,6 +129,7 @@ class Spoofing:
         self.teste_entradas.extend( teste_entradas )
         for _ in teste_entradas:
             self.teste_labels.append( label )
+        return len(teste_entradas)
 
     def load_validation_images_from_path(self, image_path,
                               label=0, samples=10,
@@ -136,6 +138,7 @@ class Spoofing:
         self.validacao_entradas.extend( validacao_entradas )
         for _ in validacao_entradas:
             self.validacao_labels.append( label )
+        return len(validacao_entradas)
 
 
     def totalize_images(self, environment="trainning"):
@@ -316,69 +319,73 @@ def load_samples(subsets : List[FaceClassSubSet], samples=10,
                  load_function : Optional[Callable[[str, Union[str, int], int], 
                                                    None]] = None) -> None:
     for subset in subsets:
+        images_count = 0
         for instance_index in range(subset["instance_start"], subset["instance_end"]):
             for version_index in range(subset["version_start"], subset["version_end"]):
                 wildcard = f"{subset['relative_path']}{subset['prefix']}{instance_index}"
                 wildcard += f"{subset['version_prefix']}{version_index}*.*"
                 relative_file_path = os.path.join(SPOOF_CASIA_FASD_PATH, wildcard)
                 logger.debug(f"Carregando imagens de: {relative_file_path}")
-                load_function(relative_file_path, subset["label"], samples)
-    # print(f"Foram carregadas: {len(spoofing.entradas)} imagens")
+                images_count += load_function(relative_file_path, subset["label"], samples)
+        logger.info(f"Carregado subset de imagens de: {subset['relative_path']}{subset['prefix']} - {images_count}")
 
 def load_test_samples(spoofing : Spoofing, test_samples=10, validation_samples=10):
     subsets = [
-        {"relative_path": "test\\live\\",
+        {"relative_path": "casia-fasd/live/",
          "prefix": "s", "label": 0, "instance_start": 1, "instance_end": 30,
          "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        {"relative_path": "test\\spoof\\",
+        {"relative_path": "casia-fasd/spoof/",
          "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 30,
          "version_start": 3, "version_end": 8, "version_prefix": "v"},
-        {"relative_path": "test\\spoof\\",
+        {"relative_path": "casia-fasd/spoof/",
          "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 30,
          "version_start": 1, "version_end": 4, "version_prefix": "vHR_"}
     ]
     logger.info("Carregando imagens de teste")
     load_samples(subsets=subsets, samples=test_samples,
                 load_function=spoofing.load_test_images_from_path)
+    logger.info(f"Foram carregadas: {len(spoofing.teste_entradas)} imagens de testes")
     load_samples(subsets=subsets, samples=validation_samples,
-                load_function=spoofing.load_validation_images_from_path)    
+                load_function=spoofing.load_validation_images_from_path)
+    logger.info(f"Foram carregadas: {len(spoofing.validacao_entradas)} imagens de validacao")
 
 def load_trainning_samples( spoofing : Spoofing, samples=10 ):
     subsets = [
-        {"relative_path": "train\\live\\",
+        {"relative_path": "casia-fasd-train/live/",
          "prefix": "bs", "label": 0, "instance_start": 1, "instance_end": 20,
          "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        {"relative_path": "train\\live\\",
+        {"relative_path": "casia-fasd-train/live/",
          "prefix": "fs", "label": 0, "instance_start": 1, "instance_end": 20,
          "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        {"relative_path": "train\\live\\",
+        {"relative_path": "casia-fasd-train/live/",
          "prefix": "s", "label": 0, "instance_start": 1, "instance_end": 20,
          "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        {"relative_path": "train\\spoof\\",
+        {"relative_path": "casia-fasd-train/spoof/",
          "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 20,
          "version_start": 3, "version_end": 8, "version_prefix": "v"},
-        {"relative_path": "train\\spoof\\",
+        {"relative_path": "casia-fasd-train/spoof/",
          "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 20,
          "version_start": 1, "version_end": 4, "version_prefix": "vHR_"}
     ]
     logger.info("Carregando imagens de treinamento")
     load_samples(subsets=subsets, samples=samples,
                 load_function=spoofing.load_trainning_images_from_path)
+    logger.info(f"Foram carregadas: {len(spoofing.entradas)} imagens de treinamento")
 
 def main():
     """Função principal"""
-    trainning_samples=10
-    test_samples=5
-    validation_samples=5
+    trainning_samples=100
+    test_samples=50
+    validation_samples=50
     epochs=10
     logger.info("Treinamento do sistema de identificação de Spoofing")
     spoof = Spoofing(optimizer=RMSprop(learning_rate=0.00001, clipvalue=1.0),
                      loss='binary_crossentropy',
                      metrics=['accuracy'])
     # input("Tecle <ENTER> para continuar")
-    # spoof.load_images_from_path(SPOOF_CASIA_FASD_PATH + "\\train\\live",
+    # spoof.load_images_from_path(SPOOF_CASIA_FASD_PATH + "/train/live",
     #                             label=0, samples=each_samples)
-    # spoof.load_images_from_path(SPOOF_CASIA_FASD_PATH + "\\train\\spoof",
+    # spoof.load_images_from_path(SPOOF_CASIA_FASD_PATH + "/train/spoof",
     #                             label=1, samples=each_samples)
     load_trainning_samples(spoofing=spoof, samples=trainning_samples)
     load_test_samples(spoofing=spoof, test_samples=test_samples, 
@@ -399,3 +406,5 @@ def main():
     logger.info(f"Evaluate Loss: {eval_loss}")
     spoof.save_state(SPOOF_MODEL_PATH)
     logger.info("Modelo Gerado e Salvo")
+
+main()
