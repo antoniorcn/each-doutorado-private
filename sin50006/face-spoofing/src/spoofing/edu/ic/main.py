@@ -388,7 +388,7 @@ def main():
     spoof.generate()
     spoof.compile()
     spoof.append_callback(EERHTERCallback(
-        validation_data=(spoof.X_valid, spoof.Y_valid), 
+        validation_data=(spoof.X_valid, spoof.Y_valid),
         logger=logger)
     )
     trainning_result = spoof.trainning(epochs=epochs, batch_size=32)
