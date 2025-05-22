@@ -24,7 +24,7 @@ def get_logger_tela(name: str) -> logging.Logger:
         formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
         handler.setFormatter(formatter)
         logger.addHandler(handler)
-        logger.setLevel(logging.DEBUG)
+        logger.setLevel(logging.INFO)
     return logger
 
 def get_logger_arquivo(name: str, log_folder:str = "logs", log_file_path_base="app"):
@@ -42,7 +42,7 @@ def get_logger_arquivo(name: str, log_folder:str = "logs", log_file_path_base="a
         log_file_path = os.path.join(log_folder, log_file_name)
 
         # Formato personalizado: data, hora, nível, mensagem e memória
-        formatter = MemoryFormatter("%(asctime)s - [%(levelname)s] [%(memory_used)s] - %(message)s")
+        formatter = MemoryFormatter("%(asctime)s-[%(levelname)s] [%(memory_used)s]-%(funcName)s: %(message)s")
 
         # Handler para console
         console_handler = logging.StreamHandler()
