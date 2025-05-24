@@ -1,12 +1,13 @@
 import os
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
-from typing import List, Optional, TypedDict, Callable, Tuple, Union
-from enum import IntEnum
+
 import numpy as np
 import logging
-from sklearn.model_selection import train_test_split
 import tensorflow as tf
+from typing import List, Optional, TypedDict, Callable, Tuple, Union
+from enum import IntEnum
+from sklearn.model_selection import train_test_split
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, GlobalAveragePooling2D,\
     Dense, Dropout, Add, Activation
@@ -17,7 +18,6 @@ from tensorflow.keras import layers, Model
 from tensorflow.keras.callbacks import Callback
 from spoofing.edu.ic.processador_image import criar_dataset, calcular_tamanho_bytes, dataset_length
 from spoofing.edu.ic.dropblock2d import DropBlock2D
-
 from spoofing.edu.ic.logger import get_logger_arquivo
 from spoofing.edu.ic.metricas_adicionais import EERHTERCallback
 
@@ -33,7 +33,7 @@ def get_env_var(name: str, default: str = None) -> str:
 
 SPOOF_DADOS_PATH = get_env_var("SPOOF_DADOS_PATH", default="/teamspace/s3_folders")
 SPOOF_CASIA_FASD_PATH = os.path.join(SPOOF_DADOS_PATH, ".")
-SPOOF_MODEL_PATH = os.path.join(SPOOF_DADOS_PATH, "face-spoofing\modelos")
+SPOOF_MODEL_PATH = os.path.join(SPOOF_DADOS_PATH, "face-spoofing\\modelos")
 # SPOOF_MODEL_PATH = os.path.join(SPOOF_DADOS_PATH, "face-spoofing/modelos")
 
 # ## Apenas Teste
@@ -111,9 +111,9 @@ class Spoofing:
 
 
     def load_trainning_images_from_path(self, image_paths : List[str],
-                              label=0, samples=10,
+                              label=0, sample_percentage=10,
                               tamanho: Tuple[int, int] = (244, 244)):
-        dataset = criar_dataset(image_paths, label, tamanho=tamanho, samples=samples, batch_size=self.batch_size)
+        dataset = criar_dataset(image_paths, label, tamanho=tamanho, samples=sample_percentage, batch_size=self.batch_size)
         logger.info(f"Images no dataset criado: {sum(dataset_length(dataset)[1])}")
         if self.treinamento is None:
             self.treinamento = dataset
@@ -123,9 +123,9 @@ class Spoofing:
         return dataset_length(self.treinamento)
 
     def load_test_images_from_path(self, image_paths : List[str],
-                              label=0, samples=10,
+                              label=0, sample_percentage=10,
                               tamanho: Tuple[int, int] = (244, 244)):
-        dataset = criar_dataset(image_paths, label, tamanho=tamanho, samples=samples, batch_size=self.batch_size)
+        dataset = criar_dataset(image_paths, label, tamanho=tamanho, samples=sample_percentage, batch_size=self.batch_size)
         if self.teste is None:
             self.teste = dataset
         else:
