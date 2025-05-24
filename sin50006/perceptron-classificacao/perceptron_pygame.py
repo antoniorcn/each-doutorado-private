@@ -55,7 +55,7 @@ print("Dados: ")
 for i in dados:
     print(i)
 taxa = 0.001
-epocas = 20
+epocas = 200
 current_epoca = 0
 
 # Função de ativação

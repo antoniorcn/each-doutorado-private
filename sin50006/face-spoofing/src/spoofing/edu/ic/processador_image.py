@@ -64,8 +64,10 @@ def carregar_imagens_com_label(
     :param extensoes_permitidas: Extensões válidas (ex: jpg, png)
     :return: (lista_de_caminhos, lista_de_labels)
     """
+
     image_files = []
     for image_path in image_paths:
+        logger.info("carregando imagens de " + image_path)
         image_files.extend(glob(image_path))
 
     image_files.sort()  # Ordena para garantir consistência
@@ -97,27 +99,23 @@ def processar_imagem_tf(image_path, label, tamanho=(224, 224)):
 
 
 def criar_dataset(
-    image_paths : List[str],
-    label,
-    samples: int = None,
+    image_paths_labels : List[Tuple[str, int]],
     tamanho: Tuple[int, int] = (224, 224),
     batch_size: int = 32,
     shuffle: bool = False
 ):
-    logger.debug(f"Acessando pasta(s): {image_paths}")
-    caminhos, labels = carregar_imagens_com_label(image_paths, label=label, samples=samples)
-    # Cria o dataset base
-    logger.debug(f"Lendo imagem de: {caminhos} e labels {labels}")
+    caminhos, labels = zip(*image_paths_labels)
+
+    caminhos = list(caminhos)
+    labels = list(labels)
+
     ds = tf.data.Dataset.from_tensor_slices((caminhos, labels))
     logger.debug("dataset criado")
-    # Limita a quantidade de amostras (se solicitado)
-    if samples is not None:
-        ds = ds.take(samples)
-        logger.debug("samples escolhidos")
-    # Embaralhamento (antes do mapeamento)
+
     if shuffle:
         ds = ds.shuffle(buffer_size=len(caminhos))
         logger.debug("dataset embaralhado")
+        
     # Aplica o pré-processamento
     logger.debug(f"Dataset possui: {sum(dataset_length(ds)[1])} nome de imagens de arquivos")
     ds = ds.map(lambda x, y: processar_imagem_tf(x, y, tamanho), num_parallel_calls=tf.data.AUTOTUNE)
@@ -132,6 +130,45 @@ def criar_dataset(
     logger.debug("aplicado prefetch para performance")
 
     return ds
+
+
+
+# def criar_dataset(
+#     image_paths : List[str],
+#     label,
+#     samples: int = None,
+#     tamanho: Tuple[int, int] = (224, 224),
+#     batch_size: int = 32,
+#     shuffle: bool = False
+# ):
+#     logger.debug(f"Acessando pasta(s): {image_paths}")
+#     caminhos, labels = carregar_imagens_com_label(image_paths, label=label, samples=samples)
+#     # Cria o dataset base
+#     logger.debug(f"Lendo imagem de: {caminhos} e labels {labels}")
+#     ds = tf.data.Dataset.from_tensor_slices((caminhos, labels))
+#     logger.debug("dataset criado")
+#     # Limita a quantidade de amostras (se solicitado)
+#     if samples is not None:
+#         ds = ds.take(samples)
+#         logger.debug("samples escolhidos")
+#     # Embaralhamento (antes do mapeamento)
+#     if shuffle:
+#         ds = ds.shuffle(buffer_size=len(caminhos))
+#         logger.debug("dataset embaralhado")
+#     # Aplica o pré-processamento
+#     logger.debug(f"Dataset possui: {sum(dataset_length(ds)[1])} nome de imagens de arquivos")
+#     ds = ds.map(lambda x, y: processar_imagem_tf(x, y, tamanho), num_parallel_calls=tf.data.AUTOTUNE)
+#     logger.debug(f"Foram carregadas: {dataset_length(ds)} images destes arquivos")
+
+#     # Agrupa em batches
+#     ds = ds.batch(batch_size)
+#     logger.debug("dataset agrupado em batches")
+
+#     # Prefetch para performance
+#     ds = ds.prefetch(tf.data.AUTOTUNE)
+#     logger.debug("aplicado prefetch para performance")
+
+#     return ds
 
 
 def calcular_tamanho_bytes(tensor: tf.Tensor) -> tf.Tensor:

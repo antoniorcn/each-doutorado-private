@@ -7,6 +7,29 @@ from sklearn.metrics import roc_curve
 from tensorflow.keras.callbacks import Callback
 
 
+
+class F1Score(tf.keras.metrics.Metric):
+    def __init__(self, name='f1_score', **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.precision = tf.keras.metrics.Precision()
+        self.recall = tf.keras.metrics.Recall()
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_pred = tf.cast(tf.greater(y_pred, 0.5), tf.float32)
+        self.precision.update_state(y_true, y_pred, sample_weight)
+        self.recall.update_state(y_true, y_pred, sample_weight)
+
+    def result(self):
+        p = self.precision.result()
+        r = self.recall.result()
+        return 2 * ((p * r) / (p + r + 1e-6))
+
+    def reset_states(self):
+        self.precision.reset_states()
+        self.recall.reset_states()
+
+
+
 class EERHTERCallback(Callback):
     def __init__(self, validation_data, logger=None):
         super().__init__()

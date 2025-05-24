@@ -4,22 +4,25 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 import numpy as np
 import logging
+import random
 import tensorflow as tf
 from typing import List, Optional, TypedDict, Callable, Tuple, Union
 from enum import IntEnum
 from sklearn.model_selection import train_test_split
+from sklearn.utils.class_weight import compute_class_weight
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Conv2D, MaxPooling2D, GlobalAveragePooling2D,\
     Dense, Dropout, Add, Activation
 from tensorflow.keras.layers import Input, Layer
 from tensorflow.keras.optimizers import Adam, RMSprop
 from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.metrics import AUC, Precision, Recall
 from tensorflow.keras import layers, Model
 from tensorflow.keras.callbacks import Callback
-from spoofing.edu.ic.processador_image import criar_dataset, calcular_tamanho_bytes, dataset_length
+from spoofing.edu.ic.processador_image import criar_dataset, calcular_tamanho_bytes, dataset_length, carregar_imagens_com_label
 from spoofing.edu.ic.dropblock2d import DropBlock2D
 from spoofing.edu.ic.logger import get_logger_arquivo
-from spoofing.edu.ic.metricas_adicionais import EERHTERCallback
+from spoofing.edu.ic.metricas_adicionais import EERHTERCallback, F1Score
 
 logger = get_logger_arquivo(__name__)
 logger.info("Detector inicializado")
@@ -33,7 +36,7 @@ def get_env_var(name: str, default: str = None) -> str:
 
 SPOOF_DADOS_PATH = get_env_var("SPOOF_DADOS_PATH", default="/teamspace/s3_folders")
 SPOOF_CASIA_FASD_PATH = os.path.join(SPOOF_DADOS_PATH, ".")
-SPOOF_MODEL_PATH = os.path.join(SPOOF_DADOS_PATH, "face-spoofing\\modelos")
+SPOOF_MODEL_PATH = os.path.join(SPOOF_DADOS_PATH, "face-spoofing/modelos")
 # SPOOF_MODEL_PATH = os.path.join(SPOOF_DADOS_PATH, "face-spoofing/modelos")
 
 # ## Apenas Teste
@@ -77,7 +80,7 @@ class SpoofingException(Exception):
 
 class Spoofing:
     """Classe Spoofing que gera, compila, treina e salva os pesos gerados"""
-    def __init__(self, optimizer="adam", loss='binary_crossentropy', metrics='accuracy', batch_size=32):
+    def __init__(self, optimizer="adam", loss='binary_crossentropy', batch_size=32):
         self.kernel_size : Tuple[int, int] = (7, 7)
         self.strides : Tuple[int, int] = (2, 2)
         self.filters : int = 64
@@ -87,10 +90,10 @@ class Spoofing:
         self.num_classes = 0
         self.optimizer=optimizer
         self.loss=loss
-        self.metrics=metrics
         self.treinamento : tf.data.Dataset[Tuple[tf.Tensor, tf.Tensor]] = None
         self.validacao : tf.data.Dataset[Tuple[tf.Tensor, tf.Tensor]] = None
         self.teste : tf.data.Dataset[Tuple[tf.Tensor, tf.Tensor]] = None
+        self.trainning_class_weight_dict = dict()
         self.batch_size = batch_size
         self.trainned_epochs = 0
         self.callbacks : List[Callback] = []
@@ -110,11 +113,16 @@ class Spoofing:
         self.callbacks.append(callback)
 
 
-    def load_trainning_images_from_path(self, image_paths : List[str],
-                              label=0, sample_percentage=10,
+    def load_trainning_images_from_path(self, image_paths_labels : List[Tuple[str, int]],
                               tamanho: Tuple[int, int] = (244, 244)):
-        dataset = criar_dataset(image_paths, label, tamanho=tamanho, samples=sample_percentage, batch_size=self.batch_size)
-        logger.info(f"Images no dataset criado: {sum(dataset_length(dataset)[1])}")
+        # Ex: y_train = np.array([0, 0, 1, 0, 1, ...])
+        labels = [label for _, label in image_paths_labels]
+        labels_classes = np.unique(labels)
+        class_weights = compute_class_weight('balanced', classes=labels_classes, y=labels)
+        self.trainning_class_weight_dict = dict(enumerate(class_weights))
+        logger.info(f"Pesos gerados para as classes de treinamento: {self.trainning_class_weight_dict}")
+        dataset = criar_dataset(image_paths_labels, tamanho=tamanho, batch_size=self.batch_size)
+        logger.info(f"Images no dataset de treinamento criado: {sum(dataset_length(dataset)[1])}")
         if self.treinamento is None:
             self.treinamento = dataset
         else:
@@ -122,24 +130,26 @@ class Spoofing:
         logger.info(f"Images totais no dataset de treinamento: {sum(dataset_length(self.treinamento)[1])}")
         return dataset_length(self.treinamento)
 
-    def load_test_images_from_path(self, image_paths : List[str],
-                              label=0, sample_percentage=10,
+    def load_test_images_from_path(self, image_paths_labels : List[Tuple[str, int]],
                               tamanho: Tuple[int, int] = (244, 244)):
-        dataset = criar_dataset(image_paths, label, tamanho=tamanho, samples=sample_percentage, batch_size=self.batch_size)
+        dataset = criar_dataset(image_paths_labels, tamanho=tamanho, batch_size=self.batch_size)
+        logger.info(f"Images no dataset de testes criado: {sum(dataset_length(dataset)[1])}")
         if self.teste is None:
             self.teste = dataset
         else:
             self.teste = self.teste.concatenate( dataset )
+        logger.info(f"Images totais no dataset de testes: {sum(dataset_length(self.teste)[1])}")
         return dataset_length(self.teste)
 
-    def load_validation_images_from_path(self, image_paths : List[str],
-                              label=0, samples=10,
+    def load_validation_images_from_path(self, image_paths_labels : List[Tuple[str, int]],
                               tamanho: Tuple[int, int] = (244, 244)):
-        dataset = criar_dataset(image_paths, label, tamanho=tamanho, samples=samples, batch_size=self.batch_size)
+        dataset = criar_dataset(image_paths_labels, tamanho=tamanho, batch_size=self.batch_size)
+        logger.info(f"Images no dataset de validacao criado: {sum(dataset_length(dataset)[1])}")
         if self.validacao is None:
             self.validacao = dataset
         else:
             self.validacao = self.validacao.concatenate( dataset )
+        logger.info(f"Images totais no dataset de validacao: {sum(dataset_length(self.validacao)[1])}")            
         return dataset_length(self.validacao)
 
 
@@ -189,7 +199,7 @@ class Spoofing:
                         f"de validacao com label {current_item[0]}")
         logger.info(f"Memória consumida: Treinamento({trainning_total_mb:.2f}Mb), " +
                     f"Teste({testing_total_mb:.2f}Mb) e Validacao({validation_total_mb:.2f}Mb)")
-
+        
     def residual_block(self, filters):
         block = Sequential()
         block.add(Conv2D(filters, (3, 3), padding='same', activation='relu'))
@@ -243,12 +253,19 @@ class Spoofing:
         self.estado = SpoofingEstados.GENERATED
         return self.modelo
 
-    def compile(self) -> None:
+    def compile(self, metrics : List = [
+            AUC(name='auc'),
+            Precision(name='precision'),
+            Recall(name='recall'),
+            F1Score(name='f1_score'),
+            "accuracy"
+        ]) -> None:
         """Compila o modelo"""
         logger.info("Compilando o modelo...")
+        
         if self.estado >= SpoofingEstados.GENERATED \
         and self.modelo is not None:
-            self.modelo.compile(optimizer=self.optimizer, loss=self.loss, metrics=self.metrics)
+            self.modelo.compile(optimizer=self.optimizer, loss=self.loss, metrics=metrics)
             self.modelo.summary()
             self.estado = SpoofingEstados.COMPILED
             logger.info(f"Formato da entrada e saida do treinamento: {self.treinamento.element_spec}")
@@ -268,7 +285,8 @@ class Spoofing:
             history = self.modelo.fit(self.treinamento,
                                       validation_data=self.validacao,
                                       epochs=epochs,
-                                      callbacks=self.callbacks)
+                                      callbacks=self.callbacks,
+                                      class_weight=self.trainning_class_weight_dict)
             self.estado = SpoofingEstados.TRAINED
         else:
             raise SpoofingException("Modelo precisa ser compilado primeiro")
@@ -322,83 +340,122 @@ def load_samples(subsets : List[FaceClassSubSet], samples=10,
         logger.info(f"Foram carregadas {images_count} imagens do subset de imagens de: {subset['relative_path']}{subset['prefix']}")
 
 
-def load_trainning_samples( spoofing : Spoofing, samples=10 ):
+def load_files_names(subsets : List[FaceClassSubSet]) -> List[Tuple[str, int]]:
+    image_paths : List[Tuple[str, int]] = []
+    for subset in subsets:
+        images_count = 0
+        logger.debug(f"Carregado subset de imagens de: {subset['relative_path']}{subset['prefix']}")
+        logger.debug(f"Carregado imagens de: {subset['instance_start']} ate: {subset['instance_end']}")
+        image_start_path : List[str] = []
+        for instance_index in range(subset["instance_start"], subset["instance_end"]):
+            logger.debug(f"Carregado imagem: {instance_index}")
+            for version_index in range(subset["version_start"], subset["version_end"]):
+                wildcard = f"{subset['relative_path']}{subset['prefix']}{instance_index}"
+                wildcard += f"{subset['version_prefix']}{version_index}*.*"
+                relative_file_path = os.path.join(SPOOF_CASIA_FASD_PATH, wildcard)
+                image_start_path.append(relative_file_path)
+                logger.debug(f"Adicionando imagens de: {relative_file_path} ao pacote de carga")
+        images_paths, image_labels = carregar_imagens_com_label(image_start_path, subset["label"], None)
+        image_paths.extend(
+                list(zip( images_paths, image_labels ))
+        )
+    return image_paths
+
+def load_trainning_samples(trainning_percentage_samples : float=0.10 ):
     subsets = [
-        {"relative_path": "train\\live\\",
-         "prefix": "bs", "label": 0, "instance_start": 1, "instance_end": 20,
-         "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        {"relative_path": "train\\live\\",
-         "prefix": "fs", "label": 0, "instance_start": 1, "instance_end": 20,
-         "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        {"relative_path": "train\\live\\",
-         "prefix": "s", "label": 0, "instance_start": 1, "instance_end": 20,
-         "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        {"relative_path": "train\\spoof\\",
-         "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 20,
-         "version_start": 3, "version_end": 8, "version_prefix": "v"},
-        {"relative_path": "train\\spoof\\",
-         "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 20,
-         "version_start": 1, "version_end": 4, "version_prefix": "vHR_"}
-
-
-
-        #  {"relative_path": "casia-fasd-train/live/",
+        # {"relative_path": "train\\live\\",
         #  "prefix": "bs", "label": 0, "instance_start": 1, "instance_end": 20,
         #  "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        # {"relative_path": "casia-fasd-train/live/",
+        # {"relative_path": "train\\live\\",
         #  "prefix": "fs", "label": 0, "instance_start": 1, "instance_end": 20,
         #  "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        # {"relative_path": "casia-fasd-train/live/",
+        # {"relative_path": "train\\live\\",
         #  "prefix": "s", "label": 0, "instance_start": 1, "instance_end": 20,
         #  "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        # {"relative_path": "casia-fasd-train/spoof/",
+        # {"relative_path": "train\\spoof\\",
         #  "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 20,
         #  "version_start": 3, "version_end": 8, "version_prefix": "v"},
-        # {"relative_path": "casia-fasd-train/spoof/",
+        # {"relative_path": "train\\spoof\\",
         #  "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 20,
         #  "version_start": 1, "version_end": 4, "version_prefix": "vHR_"}
+         {"relative_path": "casia-fasd-train/live/",
+         "prefix": "bs", "label": 0, "instance_start": 1, "instance_end": 20,
+         "version_start": 1, "version_end": 2, "version_prefix": "v"},
+        {"relative_path": "casia-fasd-train/live/",
+         "prefix": "fs", "label": 0, "instance_start": 1, "instance_end": 20,
+         "version_start": 1, "version_end": 2, "version_prefix": "v"},
+        {"relative_path": "casia-fasd-train/live/",
+         "prefix": "s", "label": 0, "instance_start": 1, "instance_end": 20,
+         "version_start": 1, "version_end": 2, "version_prefix": "v"},
+        {"relative_path": "casia-fasd-train/spoof/",
+         "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 20,
+         "version_start": 3, "version_end": 8, "version_prefix": "v"},
+        {"relative_path": "casia-fasd-train/spoof/",
+         "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 20,
+         "version_start": 1, "version_end": 4, "version_prefix": "vHR_"}
     ]
     logger.info("Carregando imagens de treinamento")
-    load_samples(subsets=subsets, samples=samples,
-                load_function=spoofing.load_trainning_images_from_path)
-    logger.info(f"Foram carregadas: {sum(dataset_length(spoofing.treinamento)[1])} imagens de treinamento")
+    trainning_files = load_files_names(subsets)
+    logger.info(f"Foram identificadas: {len(trainning_files)} imagens de treinamento")
+
+    quantidade = int(len(trainning_files) * trainning_percentage_samples) + 1
+    sample_trainning_files = random.sample(trainning_files, quantidade)
+    logger.info(f"Foram carregadas: {len(sample_trainning_files)} imagens de treinamento")
 
 
-def load_test_samples(spoofing : Spoofing, test_samples=10, validation_samples=10):
+    return sample_trainning_files
+
+
+def load_test_validation_samples(test_percentage_samples=0.10, validation_percentage_samples=0.10):
     subsets = [
-        {"relative_path": "test\\live\\",
+        {"relative_path": "test/live/",
          "prefix": "s", "label": 0, "instance_start": 1, "instance_end": 30,
          "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        {"relative_path": "test\\spoof\\",
+        {"relative_path": "test/spoof/",
          "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 30,
          "version_start": 3, "version_end": 8, "version_prefix": "v"},
-        {"relative_path": "test\\spoof\\",
+        {"relative_path": "test/spoof/",
          "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 30,
          "version_start": 1, "version_end": 4, "version_prefix": "vHR_"}
     ]
-    logger.info("Carregando imagens de teste")
-    load_samples(subsets=subsets, samples=test_samples,
-                load_function=spoofing.load_test_images_from_path)
-    logger.info(f"Foram carregadas: {sum(dataset_length(spoofing.teste)[1])} imagens de testes")
-    load_samples(subsets=subsets, samples=validation_samples,
-                load_function=spoofing.load_validation_images_from_path)
-    logger.info(f"Foram carregadas: {sum(dataset_length(spoofing.validacao)[1])} imagens de validacao")
+    logger.info("Carregando imagens de testes e validacao")
+    tests_validation_files = load_files_names(subsets)
+    logger.info(f"Foram identificadas: {len(tests_validation_files)} imagens de testes e treinamento")
 
+    quantidade_testes = int(len(tests_validation_files) * test_percentage_samples) + 1
+    quantidade_validacao = int(len(tests_validation_files) * validation_percentage_samples) + 1
+    quantidade_imagens = quantidade_testes + quantidade_validacao
+    sample_test_validation_files = random.sample(tests_validation_files, quantidade_imagens)
+    sample_test_files = sample_test_validation_files[quantidade_testes:]
+    sample_validation_files = sample_test_validation_files[:quantidade_validacao]
+    logger.info(f"Foram carregadas: {len(sample_test_files)} imagens de testes")
+    logger.info(f"Foram carregadas: {len(sample_validation_files)} imagens de validação")
+    return sample_test_files, sample_validation_files
 
 def main():
     """Função principal"""
-    trainning_samples=10
-    test_samples=10
-    validation_samples=10
+    trainning_percentage_samples=0.02
+    test_percentage_samples=0.01
+    validation_percentage_samples=0.01
     epochs=3
     logger.info("Treinamento do sistema de identificação de Spoofing")
     spoof = Spoofing(optimizer=RMSprop(learning_rate=0.00001, clipvalue=1.0),
-                     loss='binary_crossentropy',
-                     metrics=['accuracy'])
-    load_trainning_samples(spoofing=spoof, samples=trainning_samples)
-    load_test_samples(spoofing=spoof, test_samples=test_samples,
-                      validation_samples=validation_samples)
+                     loss='binary_crossentropy')
+    # load_trainning_samples(spoofing=spoof, percentage_samples=trainning_samples)
+    # load_test_samples(spoofing=spoof, test_samples=test_samples,
+    #                   validation_samples=validation_samples)
+
+
+    trainning_samples = load_trainning_samples(trainning_percentage_samples=trainning_percentage_samples)
+    test_samples, validation_samples = load_test_validation_samples(test_percentage_samples=test_percentage_samples,
+                                                                    validation_percentage_samples=validation_percentage_samples)
+
+    spoof.load_trainning_images_from_path(trainning_samples, tamanho=(244, 244))
+    spoof.load_test_images_from_path(test_samples, tamanho=(244, 244))
+    spoof.load_validation_images_from_path(validation_samples, tamanho=(244, 244))
+
     spoof.loaded_images_summary()
+
     spoof.generate()
     spoof.compile()
     spoof.append_callback(EERHTERCallback(
