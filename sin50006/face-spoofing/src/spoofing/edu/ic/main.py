@@ -317,33 +317,32 @@ class Spoofing:
             raise SpoofingException("Modelo precisa ser treinado primeiro")
 
 
-def load_samples(subsets : List[FaceClassSubSet], samples=10,
-                 load_function : Optional[Callable[[str, Union[str, int], int],
-                                                   None]] = None) -> None:
-    for subset in subsets:
-        images_count = 0
-        logger.debug(f"Carregado subset de imagens de: {subset['relative_path']}{subset['prefix']}")
-        logger.debug(f"Carregado imagens de: {subset['instance_start']} ate: {subset['instance_end']}")
-        image_paths : List[str] = []
-        for instance_index in range(subset["instance_start"], subset["instance_end"]):
-            logger.debug(f"Carregado imagem: {instance_index}")
-            for version_index in range(subset["version_start"], subset["version_end"]):
-                wildcard = f"{subset['relative_path']}{subset['prefix']}{instance_index}"
-                wildcard += f"{subset['version_prefix']}{version_index}*.*"
-                relative_file_path = os.path.join(SPOOF_CASIA_FASD_PATH, wildcard)
-                image_paths.append(relative_file_path)
-                logger.debug(f"Adicionando imagens de: {relative_file_path} ao pacote de carga")
-        logger.info(f"Pacote de carga pronto com: {len(image_paths)} caminhos de carga")                
-        images_load = sum(load_function(image_paths, subset["label"], samples)[1])
-        logger.debug(f"Images load dataset atual: {images_load}")
-        images_count += images_load
-        logger.info(f"Foram carregadas {images_count} imagens do subset de imagens de: {subset['relative_path']}{subset['prefix']}")
+# def load_samples(subsets : List[FaceClassSubSet], samples=10,
+#                  load_function : Optional[Callable[[str, Union[str, int], int],
+#                                                    None]] = None) -> None:
+#     for subset in subsets:
+#         images_count = 0
+#         logger.debug(f"Carregado subset de imagens de: {subset['relative_path']}{subset['prefix']}")
+#         logger.debug(f"Carregado imagens de: {subset['instance_start']} ate: {subset['instance_end']}")
+#         image_paths : List[str] = []
+#         for instance_index in range(subset["instance_start"], subset["instance_end"]):
+#             logger.debug(f"Carregado imagem: {instance_index}")
+#             for version_index in range(subset["version_start"], subset["version_end"]):
+#                 wildcard = f"{subset['relative_path']}{subset['prefix']}{instance_index}"
+#                 wildcard += f"{subset['version_prefix']}{version_index}*.*"
+#                 relative_file_path = os.path.join(SPOOF_CASIA_FASD_PATH, wildcard)
+#                 image_paths.append(relative_file_path)
+#                 logger.debug(f"Adicionando imagens de: {relative_file_path} ao pacote de carga")
+#         logger.info(f"Pacote de carga pronto com: {len(image_paths)} caminhos de carga")                
+#         images_load = sum(load_function(image_paths, subset["label"], samples)[1])
+#         logger.debug(f"Images load dataset atual: {images_load}")
+#         images_count += images_load
+#         logger.info(f"Foram carregadas {images_count} imagens do subset de imagens de: {subset['relative_path']}{subset['prefix']}")
 
 
 def load_files_names(subsets : List[FaceClassSubSet]) -> List[Tuple[str, int]]:
     image_paths : List[Tuple[str, int]] = []
     for subset in subsets:
-        images_count = 0
         logger.debug(f"Carregado subset de imagens de: {subset['relative_path']}{subset['prefix']}")
         logger.debug(f"Carregado imagens de: {subset['instance_start']} ate: {subset['instance_end']}")
         image_start_path : List[str] = []
@@ -408,13 +407,13 @@ def load_trainning_samples(trainning_percentage_samples : float=0.10 ):
 
 def load_test_validation_samples(test_percentage_samples=0.10, validation_percentage_samples=0.10):
     subsets = [
-        {"relative_path": "test/live/",
+        {"relative_path": "casia-fasd/live/",
          "prefix": "s", "label": 0, "instance_start": 1, "instance_end": 30,
          "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        {"relative_path": "test/spoof/",
+        {"relative_path": "casia-fasd/spoof/",
          "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 30,
          "version_start": 3, "version_end": 8, "version_prefix": "v"},
-        {"relative_path": "test/spoof/",
+        {"relative_path": "casia-fasd/spoof/",
          "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 30,
          "version_start": 1, "version_end": 4, "version_prefix": "vHR_"}
     ]
@@ -426,8 +425,8 @@ def load_test_validation_samples(test_percentage_samples=0.10, validation_percen
     quantidade_validacao = int(len(tests_validation_files) * validation_percentage_samples) + 1
     quantidade_imagens = quantidade_testes + quantidade_validacao
     sample_test_validation_files = random.sample(tests_validation_files, quantidade_imagens)
-    sample_test_files = sample_test_validation_files[quantidade_testes:]
-    sample_validation_files = sample_test_validation_files[:quantidade_validacao]
+    sample_test_files = sample_test_validation_files[:quantidade_testes]
+    sample_validation_files = sample_test_validation_files[quantidade_testes:]
     logger.info(f"Foram carregadas: {len(sample_test_files)} imagens de testes")
     logger.info(f"Foram carregadas: {len(sample_validation_files)} imagens de validação")
     return sample_test_files, sample_validation_files
@@ -465,11 +464,16 @@ def main():
     trainning_result = spoof.trainning(epochs=epochs)
     logger.info(f"Trainning Accuracy: {trainning_result.history['accuracy']}")
     logger.info(f"Trainning Loss: {trainning_result.history['loss']}")
-    eval_loss, eval_accuracy = spoof.evaluating()
-    logger.info(f"Evaluate Accuracy: {eval_accuracy}")
-    logger.info(f"Evaluate Loss: {eval_loss}")
+    # eval_loss, eval_accuracy = spoof.evaluating()
+    evaluation = spoof.evaluating()
+    # logger.info(f"Evaluate Accuracy: {eval_accuracy}")
+    # logger.info(f"Evaluate Loss: {eval_loss}")
+    logger.info(f"Evaluations: {evaluation}")
     spoof.save_state(SPOOF_MODEL_PATH)
     logger.info("Modelo Gerado e Salvo")
+
+if __name__ == "__main__":
+    main()
 
 # main()
 # df = criar_dataset( "C:\\git\\dados\\sin50006\\casia-fasd\\train\\live\\bs1v1f0.png", 0, 1, (224, 224), 32, False)
