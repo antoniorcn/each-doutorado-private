@@ -3,9 +3,10 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 
 import numpy as np
-import logging
 import random
 import tensorflow as tf
+
+from jproperties import Properties
 from typing import List, Optional, TypedDict, Callable, Tuple, Union
 from enum import IntEnum
 from sklearn.model_selection import train_test_split
@@ -15,6 +16,7 @@ from tensorflow.keras.layers import Conv2D, MaxPooling2D, GlobalAveragePooling2D
     Dense, Dropout, Add, Activation
 from tensorflow.keras.layers import Input, Layer
 from tensorflow.keras.optimizers import Adam, RMSprop
+from tensorflow.keras.losses import BinaryCrossentropy
 from tensorflow.keras.utils import to_categorical
 from tensorflow.keras.metrics import AUC, Precision, Recall
 from tensorflow.keras import layers, Model
@@ -26,6 +28,32 @@ from spoofing.edu.ic.metricas_adicionais import EERHTERCallback, F1Score
 
 logger = get_logger_arquivo(__name__)
 logger.info("Detector inicializado")
+logger.info(f"Diretório atual: {os.getcwd()}")
+config_path = "./each-doutorado-private/sin50006/face-spoofing/face-spoofing.properties"
+if not os.path.exists(config_path):
+    logger.error(f"Arquivo '{config_path}' não encontrado.")
+    exit(0)
+
+config = Properties()
+with open(config_path, 'rb') as config_file:
+    config.load(config_file)
+
+logger.info(f"Lendo informacoes de {config_path}")
+
+# Iterate through sections and properties
+for item_view in config.items():
+    logger.info(f"{item_view[0]}={item_view[1].data}")
+
+optimizer_name = config.get("optimizer_name").data
+loss_function = config.get("loss_function").data
+epochs=int(config.get("epochs").data)
+batch_size=int(config.get("batch_size").data)
+drop_block_size=int(config.get("drop_block_size").data)
+drop_block_prob=float(config.get("drop_block_prob").data)
+
+trainning_percentage_samples=float(config.get("trainning_percentage_samples").data)
+test_percentage_samples=float(config.get("test_percentage_samples").data)
+validation_percentage_samples=float(config.get("validation_percentage_samples").data)
 
 def get_env_var(name: str, default: str = None) -> str:
     """Lê uma variável de ambiente com nome `name`.
@@ -34,17 +62,10 @@ def get_env_var(name: str, default: str = None) -> str:
     value = os.getenv(name, default)
     return value
 
-SPOOF_DADOS_PATH = get_env_var("SPOOF_DADOS_PATH", default="/teamspace/s3_folders")
-SPOOF_CASIA_FASD_PATH = os.path.join(SPOOF_DADOS_PATH, ".")
-SPOOF_MODEL_PATH = os.path.join(SPOOF_DADOS_PATH, "face-spoofing/modelos")
+SPOOF_DADOS_PATH = config.get("data_path").data
+SPOOF_CASIA_FASD_PATH = config.get("casia_fasd_path").data
+SPOOF_MODEL_PATH = config.get("model_path").data
 # SPOOF_MODEL_PATH = os.path.join(SPOOF_DADOS_PATH, "face-spoofing/modelos")
-
-# ## Apenas Teste
-# file_name = f"model-samples-{10}" +\
-#                 f"-epochs-{10}.weights.h5"
-# MODEL_FILE = os.path.join(SPOOF_MODEL_PATH, file_name)
-# logger.info(f"MODEL FILE: {MODEL_FILE}")
-# ## Apenas Teste
 
 logger.info(f"SPOOF_DADOS_PATH: {SPOOF_DADOS_PATH}")
 logger.info(f"SPOOF_CASIA_FASD_PATH: {SPOOF_CASIA_FASD_PATH}")
@@ -80,7 +101,7 @@ class SpoofingException(Exception):
 
 class Spoofing:
     """Classe Spoofing que gera, compila, treina e salva os pesos gerados"""
-    def __init__(self, optimizer="adam", loss='binary_crossentropy', batch_size=32):
+    def __init__(self, optimizer="adam", loss='binary_crossentropy', local_batch_size=batch_size):
         self.kernel_size : Tuple[int, int] = (7, 7)
         self.strides : Tuple[int, int] = (2, 2)
         self.filters : int = 64
@@ -94,7 +115,7 @@ class Spoofing:
         self.validacao : tf.data.Dataset[Tuple[tf.Tensor, tf.Tensor]] = None
         self.teste : tf.data.Dataset[Tuple[tf.Tensor, tf.Tensor]] = None
         self.trainning_class_weight_dict = dict()
-        self.batch_size = batch_size
+        self.batch_size = local_batch_size
         self.trainned_epochs = 0
         self.callbacks : List[Callback] = []
 
@@ -115,7 +136,6 @@ class Spoofing:
 
     def load_trainning_images_from_path(self, image_paths_labels : List[Tuple[str, int]],
                               tamanho: Tuple[int, int] = (244, 244)):
-        # Ex: y_train = np.array([0, 0, 1, 0, 1, ...])
         labels = [label for _, label in image_paths_labels]
         labels_classes = np.unique(labels)
         class_weights = compute_class_weight('balanced', classes=labels_classes, y=labels)
@@ -189,17 +209,19 @@ class Spoofing:
         for current_item in labels_trainning.items():
             logger.info(f"Foram carregadas {current_item[1]} imagens " +
                         f"de treinamento com label {current_item[0]}")
-        logger.info(f"Total imagens de treinamento: {sum(dataset_length(self.teste)[1])}")
+            
+        logger.info(f"Total imagens de testes: {sum(dataset_length(self.teste)[1])}")
         for current_item in labels_testing.items():
             logger.info(f"Foram carregadas {current_item[1]} imagens " +
                         f"de teste com label {current_item[0]}")
-        logger.info(f"Total imagens de treinamento: {sum(dataset_length(self.validacao)[1])}")
+
+        logger.info(f"Total imagens de validacao: {sum(dataset_length(self.validacao)[1])}")
         for current_item in labels_validation.items():
             logger.info(f"Foram carregadas {current_item[1]} imagens " +
                         f"de validacao com label {current_item[0]}")
         logger.info(f"Memória consumida: Treinamento({trainning_total_mb:.2f}Mb), " +
                     f"Teste({testing_total_mb:.2f}Mb) e Validacao({validation_total_mb:.2f}Mb)")
-        
+
     def residual_block(self, filters):
         block = Sequential()
         block.add(Conv2D(filters, (3, 3), padding='same', activation='relu'))
@@ -241,10 +263,7 @@ class Spoofing:
             x = layers.add([res, shortcut])
             x = Activation('relu')(x)
 
-        # DropBlock substituído por Dropout (DropBlock requer lib externa)
-        # x = DropBlock(block_size=7, drop_prob=0.2)(x)
-        # x = Dropout(0.3)(x)
-        x = DropBlock2D(block_size=5, drop_prob=0.3)(x)
+        x = DropBlock2D(block_size=drop_block_size, drop_prob=drop_block_prob)(x)
 
         x = GlobalAveragePooling2D()(x)
         outputs = Dense(self.num_classes, activation='sigmoid')(x)
@@ -253,7 +272,8 @@ class Spoofing:
         self.estado = SpoofingEstados.GENERATED
         return self.modelo
 
-    def compile(self, metrics : List = [
+    def compile(self,
+            metrics : List = [
             AUC(name='auc'),
             Precision(name='precision'),
             Recall(name='recall'),
@@ -265,7 +285,9 @@ class Spoofing:
         
         if self.estado >= SpoofingEstados.GENERATED \
         and self.modelo is not None:
-            self.modelo.compile(optimizer=self.optimizer, loss=self.loss, metrics=metrics)
+            self.modelo.compile(optimizer=self.optimizer,
+            loss=BinaryCrossentropy(),
+            metrics=metrics)
             self.modelo.summary()
             self.estado = SpoofingEstados.COMPILED
             logger.info(f"Formato da entrada e saida do treinamento: {self.treinamento.element_spec}")
@@ -298,7 +320,7 @@ class Spoofing:
         metrics = []
         if self.estado >= SpoofingEstados.TRAINED \
         and self.modelo is not None:
-            metrics = self.modelo.evaluate(self.teste)
+            metrics = self.modelo.evaluate(self.teste, return_dict=True)
             self.estado = SpoofingEstados.EVALUATED
         else:
             raise SpoofingException("Modelo precisa ser treinado primeiro")
@@ -315,30 +337,6 @@ class Spoofing:
             self.modelo.save_weights(full_path_model_file_name)
         else:
             raise SpoofingException("Modelo precisa ser treinado primeiro")
-
-
-# def load_samples(subsets : List[FaceClassSubSet], samples=10,
-#                  load_function : Optional[Callable[[str, Union[str, int], int],
-#                                                    None]] = None) -> None:
-#     for subset in subsets:
-#         images_count = 0
-#         logger.debug(f"Carregado subset de imagens de: {subset['relative_path']}{subset['prefix']}")
-#         logger.debug(f"Carregado imagens de: {subset['instance_start']} ate: {subset['instance_end']}")
-#         image_paths : List[str] = []
-#         for instance_index in range(subset["instance_start"], subset["instance_end"]):
-#             logger.debug(f"Carregado imagem: {instance_index}")
-#             for version_index in range(subset["version_start"], subset["version_end"]):
-#                 wildcard = f"{subset['relative_path']}{subset['prefix']}{instance_index}"
-#                 wildcard += f"{subset['version_prefix']}{version_index}*.*"
-#                 relative_file_path = os.path.join(SPOOF_CASIA_FASD_PATH, wildcard)
-#                 image_paths.append(relative_file_path)
-#                 logger.debug(f"Adicionando imagens de: {relative_file_path} ao pacote de carga")
-#         logger.info(f"Pacote de carga pronto com: {len(image_paths)} caminhos de carga")                
-#         images_load = sum(load_function(image_paths, subset["label"], samples)[1])
-#         logger.debug(f"Images load dataset atual: {images_load}")
-#         images_count += images_load
-#         logger.info(f"Foram carregadas {images_count} imagens do subset de imagens de: {subset['relative_path']}{subset['prefix']}")
-
 
 def load_files_names(subsets : List[FaceClassSubSet]) -> List[Tuple[str, int]]:
     image_paths : List[Tuple[str, int]] = []
@@ -362,21 +360,6 @@ def load_files_names(subsets : List[FaceClassSubSet]) -> List[Tuple[str, int]]:
 
 def load_trainning_samples(trainning_percentage_samples : float=0.10 ):
     subsets = [
-        # {"relative_path": "train\\live\\",
-        #  "prefix": "bs", "label": 0, "instance_start": 1, "instance_end": 20,
-        #  "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        # {"relative_path": "train\\live\\",
-        #  "prefix": "fs", "label": 0, "instance_start": 1, "instance_end": 20,
-        #  "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        # {"relative_path": "train\\live\\",
-        #  "prefix": "s", "label": 0, "instance_start": 1, "instance_end": 20,
-        #  "version_start": 1, "version_end": 2, "version_prefix": "v"},
-        # {"relative_path": "train\\spoof\\",
-        #  "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 20,
-        #  "version_start": 3, "version_end": 8, "version_prefix": "v"},
-        # {"relative_path": "train\\spoof\\",
-        #  "prefix": "s", "label": 1, "instance_start": 1, "instance_end": 20,
-        #  "version_start": 1, "version_end": 4, "version_prefix": "vHR_"}
          {"relative_path": "casia-fasd-train/live/",
          "prefix": "bs", "label": 0, "instance_start": 1, "instance_end": 20,
          "version_start": 1, "version_end": 2, "version_prefix": "v"},
@@ -433,21 +416,19 @@ def load_test_validation_samples(test_percentage_samples=0.10, validation_percen
 
 def main():
     """Função principal"""
-    trainning_percentage_samples=0.02
-    test_percentage_samples=0.01
-    validation_percentage_samples=0.01
-    epochs=3
     logger.info("Treinamento do sistema de identificação de Spoofing")
-    spoof = Spoofing(optimizer=RMSprop(learning_rate=0.00001, clipvalue=1.0),
-                     loss='binary_crossentropy')
-    # load_trainning_samples(spoofing=spoof, percentage_samples=trainning_samples)
-    # load_test_samples(spoofing=spoof, test_samples=test_samples,
-    #                   validation_samples=validation_samples)
+    rmsprop = RMSprop(learning_rate=0.001, clipvalue=1.0)
+    adam = Adam(learning_rate=0.1)
+    optimizer = rmsprop
+    if optimizer_name == "adam":
+        optimizer = "adam"
+    spoof = Spoofing(optimizer=optimizer, loss=loss_function)
 
-
-    trainning_samples = load_trainning_samples(trainning_percentage_samples=trainning_percentage_samples)
-    test_samples, validation_samples = load_test_validation_samples(test_percentage_samples=test_percentage_samples,
-                                                                    validation_percentage_samples=validation_percentage_samples)
+    trainning_samples = load_trainning_samples(
+        trainning_percentage_samples=trainning_percentage_samples)
+    test_samples, validation_samples = load_test_validation_samples(
+        test_percentage_samples=test_percentage_samples,
+        validation_percentage_samples=validation_percentage_samples)
 
     spoof.load_trainning_images_from_path(trainning_samples, tamanho=(244, 244))
     spoof.load_test_images_from_path(test_samples, tamanho=(244, 244))
@@ -464,16 +445,13 @@ def main():
     trainning_result = spoof.trainning(epochs=epochs)
     logger.info(f"Trainning Accuracy: {trainning_result.history['accuracy']}")
     logger.info(f"Trainning Loss: {trainning_result.history['loss']}")
-    # eval_loss, eval_accuracy = spoof.evaluating()
+    logger.info(f"Entire history: {trainning_result.history}")
+
     evaluation = spoof.evaluating()
-    # logger.info(f"Evaluate Accuracy: {eval_accuracy}")
-    # logger.info(f"Evaluate Loss: {eval_loss}")
+
     logger.info(f"Evaluations: {evaluation}")
     spoof.save_state(SPOOF_MODEL_PATH)
     logger.info("Modelo Gerado e Salvo")
 
 if __name__ == "__main__":
     main()
-
-# main()
-# df = criar_dataset( "C:\\git\\dados\\sin50006\\casia-fasd\\train\\live\\bs1v1f0.png", 0, 1, (224, 224), 32, False)

@@ -53,6 +53,10 @@ cmake-build-*/
 # File-based project format
 *.iws
 
+# Tensor flow 
+*.h5
+*.keras
+
 # IntelliJ
 out/
 
