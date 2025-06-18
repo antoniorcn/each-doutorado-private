@@ -1,0 +1,10 @@
+epochs=50
+batch_size=128
+
+Loss Function = "Cross Entropy"
+Trainning with Adam
+Learning Rate = 0.1 primeiras 20 epocas
+Learning Rate = 0.01 ultimas 10 epocas
+
+
+Drop block 7x7

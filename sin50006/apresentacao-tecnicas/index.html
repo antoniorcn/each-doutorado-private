@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Visualização de Convolução 2D</title>
+  <style>
+    body { display: flex; gap: 20px; }
+    canvas { border: 1px solid #333; }
+  </style>
+</head>
+<body>
+
+  <canvas id="inputCanvas" width="140" height="140"></canvas>
+  <canvas id="overlayCanvas" width="140" height="140" style="position:absolute; top:0; left:0;"></canvas>
+  <canvas id="outputCanvas" width="128" height="128"></canvas>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0/dist/tf.min.js"></script>
+  <script>
+    const KERNEL_SIZE = 3;
+    const STRIDE = 1;
+    const PADDING = 0;
+    const SIZE = 64;
+
+    async function carregarImagem() {
+      const img = new Image();
+      img.src = "https://as2.ftcdn.net/v2/jpg/02/66/72/41/1000_F_266724172_Iy8gdKgMa7XmrhYYxLCxyhx6J7070Pr8.jpg"; // letra 'A', 64x64
+      await new Promise(r => img.onload = r);
+      return img;
+    }
+
+    function aplicarConvolucao(imageData, kernel) {
+      const inW = imageData.width, inH = imageData.height;
+      const outW = (inW - KERNEL_SIZE + 2 * PADDING) / STRIDE + 1;
+      const outH = (inH - KERNEL_SIZE + 2 * PADDING) / STRIDE + 1;
+      const output = tf.tensor(imageData.data)
+                       .reshape([inH, inW, 4])
+                       .mean(2)
+                       .pad([[PADDING, PADDING],[PADDING,PADDING]])
+                       .toFloat();
+      const conv = output
+        .expandDims(0)
+        .expandDims(-1)
+        .conv2d(tf.tensor2d(kernel.flat(), [KERNEL_SIZE, KERNEL_SIZE]).expandDims(-1).expandDims(-1), STRIDE, 'valid')
+        .squeeze().arraySync();
+      return conv;
+    }
+
+    (async () => {
+      const img = await carregarImagem();
+
+      const inputCanvas = document.getElementById("inputCanvas");
+      const overlayCanvas = document.getElementById("overlayCanvas");
+      const outputCanvas = document.getElementById("outputCanvas");
+
+      const ctxIn = inputCanvas.getContext("2d");
+      const ctxOv = overlayCanvas.getContext("2d");
+      const ctxOut = outputCanvas.getContext("2d");
+
+      // desenha a imagem
+      ctxIn.drawImage(img, 0, 0, SIZE, SIZE);
+      const imgData = ctxIn.getImageData(0, 0, SIZE, SIZE);
+
+      // define kernel simples (detecção de borda vertical)
+      const kernel = [
+        [1, 0, -1],
+        [1, 0, -1],
+        [1, 0, -1]
+      ];
+
+      const convMap = aplicarConvolucao(imgData, kernel);
+
+      // desenha saída normalizada
+      const minv = Math.min(...convMap.flat());
+      const maxv = Math.max(...convMap.flat());
+      const W = convMap.length, H = convMap[0].length;
+      const imgOut = ctxOut.createImageData(W, H);
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const val = Math.round(255 * (convMap[y][x] - minv)/(maxv - minv));
+          const i = (y*W + x)*4;
+          imgOut.data[i] = imgOut.data[i+1] = imgOut.data[i+2] = val;
+          imgOut.data[i+3] = 255;
+        }
+      }
+      ctxOut.putImageData(imgOut, 0, 0);
+
+      // animação do kernel
+      let i = 0, j = 0;
+      const step = () => {
+        ctxOv.clearRect(0,0,SIZE, SIZE);
+        ctxOv.strokeStyle = "red";
+        ctxOv.lineWidth = 2;
+        ctxOv.strokeRect(j, i, KERNEL_SIZE, KERNEL_SIZE);
+
+        j++;
+        if (j > SIZE - KERNEL_SIZE) { j = 0; i++; }
+        if (i > SIZE - KERNEL_SIZE) { return; }
+        requestAnimationFrame(step);
+      };
+      step();
+    })();
+  </script>
+</body>
+</html>

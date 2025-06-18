@@ -2,7 +2,6 @@ kivy
 numpy
 deepface
 tensorflow
-tf-keras
 chromadb
 pytorch
 gdown>=3.10.1

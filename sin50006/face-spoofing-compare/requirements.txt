@@ -1,0 +1,19 @@
+numpy
+deepface
+tensorflow
+chromadb
+torch
+torchvision
+scikit-learn
+psutil
+torchaudio
+gdown>=3.10.1
+tqdm>=4.30.0
+Pillow>=5.2.0
+opencv-python>=4.5.5.64
+mtcnn>=0.1.0
+retina-face>=0.0.1
+fire>=0.4.0
+gunicorn>=20.1.0
+
+# python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
