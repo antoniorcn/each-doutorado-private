@@ -91,8 +91,8 @@ class FaceDetectionApp(App):
 
     def build(self):
         # Posicionando a tela no canto superior esquerdo
-        # Window.top = 0  # Altura total da tela - altura da janela
-        # Window.left = 0  # Colado na esquerda
+        Window.top = 0  # Altura total da tela - altura da janela
+        Window.left = 0  # Colado na esquerda
         # Window.borderless = True # Remove os frames laterais
         Clock.schedule_interval(self.update, 1.0 / 15.0)
 
