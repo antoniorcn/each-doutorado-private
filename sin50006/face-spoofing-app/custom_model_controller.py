@@ -20,6 +20,6 @@ class CustomModelController:
 
     def is_real_face(self, face_batch):
         result = self.model.predict(face_batch)
-        print("Resultado: ", result)
+        print("Resultado do modelo customizado: ", result)
         return result[0][0] <= 0.5
         # 0-Live        1-Spoofing
