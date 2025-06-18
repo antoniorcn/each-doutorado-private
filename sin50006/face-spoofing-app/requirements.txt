@@ -4,7 +4,10 @@ deepface
 tensorflow
 tf-keras
 chromadb
-pytorch
+torch
+torchvision
+torchaudio
+scikit-learn
 gdown>=3.10.1
 tqdm>=4.30.0
 Pillow>=5.2.0
@@ -13,3 +16,7 @@ mtcnn>=0.1.0
 retina-face>=0.0.1
 fire>=0.4.0
 gunicorn>=20.1.0
+
+
+# Instalar o pytorch
+# python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118

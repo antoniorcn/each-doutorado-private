@@ -29,10 +29,13 @@ class DeepFaceRecognitionController:
             metadatas=[{'name': image_name}]
         )
 
+    def extract_faces(self, pil_img):
+        face_objs = DeepFace.extract_faces(np.array(pil_img),
+                                           anti_spoofing = True, enforce_detection = False)
+        return face_objs
 
     def is_real_face(self, pil_img):
-        face_objs = DeepFace.extract_faces(np.array(pil_img), 
-                                           anti_spoofing = True, enforce_detection = False)
+        face_objs = self.extract_faces(pil_img)
         return not all(face_obj["is_real"] is True for face_obj in face_objs)
     
     def pesquisar_imagem(self, pil_img):
