@@ -39,7 +39,7 @@ def carregar_imagens_com_label(
     return image_files, labels
 
 
-def processar_imagem(image_path, label, tamanho=(224, 224)):
+def processar_imagem(image_path, label, tamanho=(244, 244)):
     image = Image.open(image_path)  # lê o conteúdo do arquivo
     # Detecta a extensão
     image = image.convert('RGB')

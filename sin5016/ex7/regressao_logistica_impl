@@ -1,0 +1,10 @@
+import numpy as np
+
+
+class LogisticRegression: 
+
+  def __init__(self):
+    self.w = None
+
+  def fit(self, X : np.ndarray, Y: np.ndarray): 
+    self.w = np.random.random()

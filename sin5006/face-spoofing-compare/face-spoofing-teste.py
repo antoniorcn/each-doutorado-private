@@ -85,7 +85,7 @@ if __name__ == "__main__":
     deepface_acerto = 0
     image_index = 0
 
-    for test_image_file in validation_files[0:10]:
+    for test_image_file in validation_files:
         image_filename, image_label =  test_image_file
         image, label = processar_imagem(image_filename, image_label)
         logger.debug(f"Image Shape: {image.shape}  Label : {label}")
@@ -121,6 +121,7 @@ if __name__ == "__main__":
         # image_normalizada = tf.cast(img_array, tf.float32) / 255.0  # normaliza
         texto = f"Image Index: {image_index}    Custom Acertos: {custom_model_acerto}     Deep Face Acertos: {deepface_acerto}"
         logger.info(texto)
+        image_index += 1
     
     logger.info(f"Custom Model - Falso Positivos: {custom_model_fp}")
     logger.info(f"Custom Model - Falso Negativos: {custom_model_fn}")

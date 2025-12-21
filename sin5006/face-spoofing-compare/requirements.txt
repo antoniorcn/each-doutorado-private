@@ -4,6 +4,7 @@ tensorflow
 chromadb
 torch
 torchvision
+tf-keras
 scikit-learn
 psutil
 torchaudio
