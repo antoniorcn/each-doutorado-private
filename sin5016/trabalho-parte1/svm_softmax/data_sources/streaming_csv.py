@@ -45,7 +45,6 @@ class StreamingCSVDataSource(DataSource):
         self._rng = np.random.default_rng(rng_seed)
 
         self._label_to_index: dict[str, int] = {}
-        self._index_to_label: List[str] = []
         self._feature_indices: Optional[List[int]] = None
         self._scan_metadata()
 
@@ -75,7 +74,6 @@ class StreamingCSVDataSource(DataSource):
             num_features=len(self._feature_indices),
             num_classes=len(self._label_to_index),
         )
-        self._set_class_names(self._index_to_label)
 
     def _resolve_feature_indices(self, row_length: int) -> List[int]:
         if self.feature_columns is not None:
@@ -95,7 +93,6 @@ class StreamingCSVDataSource(DataSource):
         value = label_value.strip()
         if value not in self._label_to_index:
             self._label_to_index[value] = len(self._label_to_index)
-            self._index_to_label.append(value)
         return self._label_to_index[value]
 
     def _decode_row(self, row: Sequence[str]) -> Tuple[np.ndarray, int]:

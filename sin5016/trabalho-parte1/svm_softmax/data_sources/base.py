@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Iterable, Iterator, List, Sequence, Tuple
+from typing import Iterable, Iterator, List, Tuple
 
 import numpy as np
 
@@ -26,7 +26,6 @@ class DataSource(ABC):
         self._num_samples: int = 0
         self._num_features: int = 0
         self._num_classes: int = 0
-        self._class_names: List[str] = []
 
     @property
     def num_samples(self) -> int:
@@ -39,10 +38,6 @@ class DataSource(ABC):
     @property
     def num_classes(self) -> int:
         return self._num_classes
-
-    @property
-    def class_names(self) -> List[str]:
-        return self._class_names
 
     @abstractmethod
     def iter_batches(self, batch_size: int, shuffle: bool = True) -> Iterator[DataBatch]:
@@ -72,9 +67,6 @@ class DataSource(ABC):
         self._num_features = num_features
         self._num_classes = num_classes
 
-    def _set_class_names(self, names: Sequence[str]) -> None:
-        self._class_names = list(names)
-
 
 class ArrayDataSource(DataSource):
     """Implementação simples baseada em arrays já carregados."""
@@ -86,7 +78,6 @@ class ArrayDataSource(DataSource):
         *,
         rng_seed: int | None = None,
         num_classes: int | None = None,
-        class_names: Sequence[str] | None = None,
     ) -> None:
         super().__init__()
         if features.shape[0] != labels.shape[0]:
@@ -102,8 +93,6 @@ class ArrayDataSource(DataSource):
             num_features=self._features.shape[1] if self._features.ndim == 2 else 0,
             num_classes=num_classes,
         )
-        if class_names is not None:
-            self._set_class_names(class_names)
 
     def iter_batches(self, batch_size: int, shuffle: bool = True) -> Iterator[DataBatch]:
         if batch_size <= 0:

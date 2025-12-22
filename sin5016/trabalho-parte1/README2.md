@@ -65,9 +65,6 @@ Principais argumentos:
 - `--history-log`: caminho de saída (JSON) com o histórico por época, contendo
   `loss`/`accuracy` de treino e `val_loss`/`val_accuracy`. Útil para monitorar
   overfitting/underfitting posteriormente ou alimentar notebooks de análise.
-- Durante a preparação do dataset o script imprime a lista de classes alvo
-  inferidas a partir do CSV, para facilitar a conferência se o encoding está
-  correto.
 
 > **Importante:** certifique-se de adicionar a coluna de rótulos ao CSV
 > exportado pelo HOG antes de iniciar o treinamento.

@@ -95,7 +95,6 @@ class InMemoryCSVDataSource(DataSource):
             num_features=self._features.shape[1],
             num_classes=encoder.num_classes,
         )
-        self._set_class_names(encoder.classes)
 
     def _extract_feature_values(self, row: Sequence[str]) -> List[float]:
         indices = self._resolve_feature_indices(len(row))

@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import math
 from pathlib import Path
+import time
 
 from sklearn.model_selection import train_test_split
 
@@ -142,43 +143,33 @@ def split_dataset(args, base_source):
     )
 
     num_classes = base_source.num_classes
-    class_names = base_source.class_names
     train_source = ArrayDataSource(
         X_train,
         y_train,
         rng_seed=args.split_seed,
         num_classes=num_classes,
-        class_names=class_names,
     )
     val_source = ArrayDataSource(
         X_val,
         y_val,
         rng_seed=args.split_seed,
         num_classes=num_classes,
-        class_names=class_names,
     )
     test_source = ArrayDataSource(
         X_test,
         y_test,
         rng_seed=args.split_seed,
         num_classes=num_classes,
-        class_names=class_names,
     )
     return train_source, val_source, test_source
-
-
-def print_class_summary(data_source):
-    if not data_source.class_names:
-        return
-    print("Classes detectadas/alvo:")
-    for idx, name in enumerate(data_source.class_names):
-        print(f"  [{idx}] {name}")
 
 
 def main():
     args = parse_args()
     data_source = build_data_source(args)
+    print("Datasource carregado")
     feature_map = build_feature_map(args)
+    start_time = time.perf_counter()
     train_source, val_source, test_source = split_dataset(args, data_source)
 
     print(
@@ -186,7 +177,6 @@ def main():
         f"{data_source.num_features} features | "
         f"{data_source.num_classes} classes"
     )
-    print_class_summary(data_source)
     print(
         f"Split -> treino: {train_source.num_samples} | "
         f"validação: {val_source.num_samples} | "
@@ -219,6 +209,9 @@ def main():
         Path(args.save_model).parent.mkdir(parents=True, exist_ok=True)
         model.save(args.save_model)
         print(f"Pesos salvos em {args.save_model}")
+
+    elapsed = time.perf_counter() - start_time
+    print(f"Treinamento concluído em {elapsed:.2f} segundos")
 
 
 if __name__ == "__main__":
