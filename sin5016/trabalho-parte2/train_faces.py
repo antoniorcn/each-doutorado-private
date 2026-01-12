@@ -85,7 +85,7 @@ class FaceClassifier(nn.Module):
             nn.MaxPool2d(2),
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.AdaptiveAvgPool2d(5),
+            nn.AdaptiveAvgPool2d(1),
         )
         self.classifier = nn.Sequential(
             nn.Flatten(),
@@ -96,7 +96,8 @@ class FaceClassifier(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.classifier(self.cnn(x))
+        x = self.cnn(x)
+        return self.classifier( x )
 
 
 class CsvImageDataset(Dataset):
