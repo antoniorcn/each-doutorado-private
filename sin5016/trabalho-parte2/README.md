@@ -32,5 +32,5 @@ Metrics (accuracy + macro F1) and epoch losses are logged to both console and th
 
 Example:
 ```bash
-python train_faces.py --image-dir C:/git/dados/sin5016/Celeb_A/img_align_celeba --input-file  C:/git/dados/sin5016/celeb_a_labels.csv --height 160 --width 120 --batch-size 64 --epochs 25 --lr 0.0005 --num-workers 8 --num-classes 3113 --log-file logs/celeba.log --model-out saved/celeba_face.pt --gpu
+python train_faces.py --image-dir C:/git/dados/sin5016/Celeb_A/img_align_celeba --input-file  C:/git/dados/sin5016/celeb_a_labels.csv --height 160 --width 120 --batch-size 256 --epochs 25 --lr 0.0005 --num-workers 8 --num-classes 3113 --log-file logs/celeba.log --model-out saved/celeba_face.pt --train-split 0.7 --val-split 0.15 --test-split 0.15 --gpu
 ```
