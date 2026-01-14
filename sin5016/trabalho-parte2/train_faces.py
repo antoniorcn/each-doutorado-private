@@ -4,7 +4,7 @@ import csv
 import math
 import time
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -12,6 +12,7 @@ from PIL import Image
 from torch import nn, optim
 from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import transforms
+import json
 
 try:
     import optuna
@@ -19,6 +20,8 @@ except ImportError as exc:
     raise RuntimeError("Optuna is required for hyperparameter tuning (`pip install optuna`).") from exc
 
 LOGGER = logging.getLogger(__name__)
+
+obj_metrics = { "average_loss": None, "acc": None, "f1": None }
 
 
 def configure_logger(log_file: Path) -> None:
@@ -73,24 +76,29 @@ class FaceClassifier(nn.Module):
         num_classes: int,
         in_channels: int = 1,
         dropout: float = 0.3,
-        feature_dim: int = 128,
+        feature_dim: int = 16536,
     ):
         super().__init__()
         self.cnn = nn.Sequential(
-            nn.Conv2d(in_channels, 32, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),
-            nn.Conv2d(32, 64, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.MaxPool2d(2),
-            nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(in_channels, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(8),
+            # nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            # nn.ReLU(),
+            # nn.MaxPool2d(2),
+            # nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            # nn.ReLU(inplace=True),
+            # nn.MaxPool2d(2),
+            # nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            # nn.ReLU(inplace=True),
+            # nn.AdaptiveAvgPool2d(1),
         )
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(128, feature_dim),
-            nn.ReLU(inplace=True),
+            nn.Linear(32768, feature_dim),
+            nn.ReLU(),
+            # nn.Linear(feature_dim, num_classes * 2),
+            # nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(feature_dim, num_classes),
         )
@@ -154,6 +162,10 @@ def compute_metrics_from_logits(
     preds = torch.argmax(outputs, dim=1)
     correct = (preds == targets).sum().item()
     accuracy = correct / targets.numel()
+    LOGGER.info("Targets ==> %s", targets)
+    LOGGER.info("Predicts ==> %s", preds)
+    LOGGER.info("Corrects ==> %s", correct)
+
     preds_onehot = F.one_hot(preds, num_classes=num_classes).to(dtype=torch.float64)
     targets_onehot = F.one_hot(targets, num_classes=num_classes).to(dtype=torch.float64)
     true_positives = (preds_onehot * targets_onehot).sum(dim=0)
@@ -175,6 +187,7 @@ def train_epoch(
     device: torch.device,
     num_classes: int,
 ) -> Tuple[float, float, float]:
+    global obj_metrics
     """Single epoch training that reports loss, accuracy, and F1 score."""
     model.train()
     total_loss = 0.0
@@ -198,6 +211,20 @@ def train_epoch(
     targets = torch.cat(all_labels)
     acc, f1 = compute_metrics_from_logits(logits, targets, num_classes)
     average_loss = total_loss / len(loader)
+    if obj_metrics["average_loss"] is not None:
+        obj_metrics["average_loss"].append(average_loss)
+    else: 
+        obj_metrics["average_loss"] = [average_loss]
+
+    if obj_metrics["acc"] is not None:
+        obj_metrics["acc"].append(acc)
+    else:
+        obj_metrics["acc"] = [acc]
+
+    if obj_metrics["f1"] is not None:
+        obj_metrics["f1"].append(f1)
+    else:
+        obj_metrics["f1"] = [f1]
     return average_loss, acc, f1
 
 
@@ -277,22 +304,32 @@ def evaluate_model(
     loader: DataLoader,
     device: torch.device,
     num_classes: int,
-) -> Tuple[float, float]:
-    """Evaluate accuracy and macro-F1 without modifying weights."""
+    criterion: Optional[nn.Module] = None,
+) -> Tuple[float, float, float]:
+    """Evaluate average loss, accuracy, and macro-F1 without modifying weights."""
     model.eval()
-    outputs = []
-    targets = []
+    outputs: list[torch.Tensor] = []
+    targets: list[torch.Tensor] = []
+    total_loss = 0.0
+    total_samples = 0
+    criterion = criterion or nn.CrossEntropyLoss()
     with torch.no_grad():
         for inputs, labels in loader:
             inputs = inputs.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
-            outputs.append(model(inputs))
+            logits = model(inputs)
+            outputs.append(logits)
             targets.append(labels)
-    if not outputs:
-        return 0.0, 0.0
+            batch_loss = criterion(logits, labels)
+            total_loss += batch_loss.item() * labels.size(0)
+            total_samples += labels.size(0)
+    if not outputs or total_samples == 0:
+        return 0.0, 0.0, 0.0
     logits = torch.cat(outputs)
     collected_targets = torch.cat(targets)
-    return compute_metrics_from_logits(logits, collected_targets, num_classes)
+    average_loss = total_loss / total_samples
+    acc, f1 = compute_metrics_from_logits(logits, collected_targets, num_classes)
+    return average_loss, acc, f1
 
 
 def stratified_split_dataset(
@@ -322,9 +359,13 @@ def stratified_split_dataset(
         generator = torch.Generator().manual_seed(seed + label)
         permutation = torch.randperm(len(indices), generator=generator)
         shuffled = [indices[i] for i in permutation.tolist()]
+        LOGGER.debug("Label %d Shuffled %s", label, shuffled)
         train_count = int(len(shuffled) * train_frac)
         val_count = int(len(shuffled) * val_frac)
-        test_count = len(shuffled) - train_count - val_count
+        # rest_count = int(len(shuffled) * (1.0 - train_frac))
+        # test_count = rest_count - val_count
+
+        LOGGER.debug("Sizes: Trainning %d    Validation %d    Tests %d", train_count, val_count, len(shuffled) - train_count - val_count)
         splits = [
             shuffled[:train_count],
             shuffled[train_count : train_count + val_count],
@@ -333,7 +374,7 @@ def stratified_split_dataset(
         train_indices.extend(splits[0])
         val_indices.extend(splits[1])
         test_indices.extend(splits[2])
-
+    LOGGER.info("Result Sizes: Trainning %d    Validation %d    Tests %d", len(train_indices), len(val_indices), len(test_indices))
     train_subset = Subset(dataset, train_indices)
     val_subset = Subset(dataset, val_indices)
     test_subset = Subset(dataset, test_indices)
@@ -419,7 +460,10 @@ def parse_args() -> argparse.Namespace:
         default=0.15,
         help="Fraction of samples assigned to test; train+val+test must equal 1.",
     )
-    return parser.parse_args()
+
+
+    parsed_args = parser.parse_args()
+    return parsed_args
 
 
 def run_optuna_trials(
@@ -445,6 +489,7 @@ def run_optuna_trials(
             train_dataset, batch_size, args.num_workers, device, shuffle=True
         )
         model = FaceClassifier(num_classes=target_num_classes, dropout=dropout).to(device)
+        LOGGER.info("Model Architecture: %s", model)
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
         run_training_epochs(
@@ -461,8 +506,8 @@ def run_optuna_trials(
         val_loader = create_data_loader(
             val_dataset, eval_batch_size, args.num_workers, device, shuffle=False
         )
-        val_accuracy, val_f1 = evaluate_model(
-            model, val_loader, device, target_num_classes
+        val_loss, val_accuracy, val_f1 = evaluate_model(
+            model, val_loader, device, target_num_classes, criterion
         )
 
         inference_loader = create_data_loader(
@@ -473,14 +518,16 @@ def run_optuna_trials(
         )
         trial.set_user_attr("val_accuracy", val_accuracy)
         trial.set_user_attr("val_f1", val_f1)
+        trial.set_user_attr("val_loss", val_loss)
         trial.set_user_attr("min_latency", min_latency)
         trial.set_user_attr("max_latency", max_latency)
         trial.set_user_attr("avg_latency", avg_latency)
 
         LOGGER.info(
-            "Optuna trial %d | val_acc=%.4f | val_f1=%.4f | batch_size=%d | dropout=%.2f | lr=%.5f | "
+            "Optuna trial %d | val_loss=%.4f | val_acc=%.4f | val_f1=%.4f | batch_size=%d | dropout=%.2f | lr=%.5f | "
             "weight_decay=%.5f | lat(min/avg/max)=%.6f/%.6f/%.6f",
             trial.number,
+            val_loss,
             val_accuracy,
             val_f1,
             batch_size,
@@ -514,6 +561,12 @@ def main() -> None:
     configure_logger(args.log_file)
     set_seed(args.seed)
     LOGGER.info("Horario de inicio: %s", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
+    args_dict = vars(args)
+    LOGGER.info("Args: %s", args_dict)
+    # Method C: Iterate over the dictionary for formatted output
+    LOGGER.info("Formatted arguments:")
+    for arg_name, arg_value in args_dict.items():
+        LOGGER.info("Args: %s => %s", arg_name, arg_value)
     device = (
         torch.device("cuda")
         if args.gpu and torch.cuda.is_available()
@@ -581,7 +634,8 @@ def main() -> None:
             best_trial.user_attrs.get("max_latency", 0.0),
         )
         LOGGER.info(
-            "Best trial validation metrics | accuracy=%.4f | f1=%.4f",
+            "Best trial validation metrics | loss=%.4f | accuracy=%.4f | f1=%.4f",
+            best_trial.user_attrs.get("val_loss", 0.0),
             best_trial.user_attrs.get("val_accuracy", 0.0),
             best_trial.user_attrs.get("val_f1", 0.0),
         )
@@ -598,6 +652,7 @@ def main() -> None:
     model = FaceClassifier(num_classes=target_num_classes, dropout=selected_dropout).to(
         device
     )
+    LOGGER.info("Model Architecture: %s", model)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(
         model.parameters(), lr=selected_lr, weight_decay=selected_weight_decay
@@ -619,10 +674,10 @@ def main() -> None:
         final_f1,
     )
 
-    val_acc, val_f1 = evaluate_model(model, val_loader, device, target_num_classes)
-    LOGGER.info("Validation metrics | accuracy=%.4f | f1=%.4f", val_acc, val_f1)
-    test_acc, test_f1 = evaluate_model(model, test_loader, device, target_num_classes)
-    LOGGER.info("Test metrics | accuracy=%.4f | f1=%.4f", test_acc, test_f1)
+    val_loss, val_acc, val_f1 = evaluate_model(model, val_loader, device, target_num_classes, criterion)
+    LOGGER.info("Validation metrics | loss=%.4f | accuracy=%.4f | f1=%.4f", val_loss, val_acc, val_f1)
+    test_loss, test_acc, test_f1 = evaluate_model(model, test_loader, device, target_num_classes, criterion)
+    LOGGER.info("Test metrics | loss=%.4f | accuracy=%.4f | f1=%.4f", test_loss, test_acc, test_f1)
 
     min_latency, max_latency, avg_latency = measure_inference_latency(
         model, test_loader, device
@@ -636,6 +691,7 @@ def main() -> None:
     )
     LOGGER.info("Training complete; weights written to %s", args.model_out)
     termino = time.time()
+    LOGGER.info("Metrics History: %s", json.dumps(obj_metrics))
     LOGGER.info("Horario de termino: %s", time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
     LOGGER.info("Tempo gasto: %6.2f segundos", (termino - inicio))
 
