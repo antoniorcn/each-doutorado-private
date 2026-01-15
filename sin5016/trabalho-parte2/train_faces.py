@@ -14,14 +14,20 @@ from torch.utils.data import DataLoader, Dataset, Subset
 from torchvision import transforms
 import json
 
-try:
-    import optuna
-except ImportError as exc:
-    raise RuntimeError("Optuna is required for hyperparameter tuning (`pip install optuna`).") from exc
+# try:
+#     import optuna
+# except ImportError as exc:
+#     raise RuntimeError("Optuna is required for hyperparameter tuning (`pip install optuna`).") from exc
 
 LOGGER = logging.getLogger(__name__)
 
-obj_metrics = { "average_loss": None, "acc": None, "f1": None }
+# Store metric history across epochs/evaluations.
+obj_metrics = {
+    "training_loss": [],
+    "validation_loss": [],
+    "acc": [],
+    "f1": [],
+}
 
 
 def configure_logger(log_file: Path) -> None:
@@ -211,20 +217,9 @@ def train_epoch(
     targets = torch.cat(all_labels)
     acc, f1 = compute_metrics_from_logits(logits, targets, num_classes)
     average_loss = total_loss / len(loader)
-    if obj_metrics["average_loss"] is not None:
-        obj_metrics["average_loss"].append(average_loss)
-    else: 
-        obj_metrics["average_loss"] = [average_loss]
-
-    if obj_metrics["acc"] is not None:
-        obj_metrics["acc"].append(acc)
-    else:
-        obj_metrics["acc"] = [acc]
-
-    if obj_metrics["f1"] is not None:
-        obj_metrics["f1"].append(f1)
-    else:
-        obj_metrics["f1"] = [f1]
+    obj_metrics["training_loss"].append(average_loss)
+    obj_metrics["acc"].append(acc)
+    obj_metrics["f1"].append(f1)
     return average_loss, acc, f1
 
 
@@ -256,6 +251,8 @@ def run_training_epochs(
     num_classes: int,
     log_metrics: bool = True,
     prefix: str = "",
+    val_loader: Optional[DataLoader] = None,
+    val_num_classes: Optional[int] = None,
 ) -> Tuple[float, float, float]:
     """Run the main epoch loop, optionally logging per-epoch metrics."""
     last_loss = last_acc = last_f1 = 0.0
@@ -264,6 +261,21 @@ def run_training_epochs(
         last_loss, last_acc, last_f1 = train_epoch(
             model, loader, optimizer, criterion, device, num_classes
         )
+        if val_loader is not None and val_num_classes is not None:
+            val_loss, val_acc, val_f1 = evaluate_model(
+                model, val_loader, device, val_num_classes, criterion
+            )
+            obj_metrics["validation_loss"].append(val_loss)
+            if log_metrics:
+                LOGGER.info(
+                    "%sEpoch %d/%d | val_loss=%.4f | val_acc=%.4f | val_f1=%.4f",
+                    prefix_text,
+                    epoch,
+                    epochs,
+                    val_loss,
+                    val_acc,
+                    val_f1,
+                )
         if log_metrics:
             LOGGER.info(
                 "%sEpoch %d/%d | loss=%.4f | accuracy=%.4f | f1=%.4f",
@@ -402,12 +414,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=64, help="Samples per batch.")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate for Adam.")
     parser.add_argument("--weight-decay", type=float, default=0.0, help="L2 regularization.")
-    parser.add_argument(
-        "--optuna-trials",
-        type=int,
-        default=0,
-        help="Number of Optuna trials to run; set >0 to enable tuning.",
-    )
+    # parser.add_argument(
+    #     "--optuna-trials",
+    #     type=int,
+    #     default=0,
+    #     help="Number of Optuna trials to run; set >0 to enable tuning.",
+    # )
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout in classifier.")
     parser.add_argument("--num-workers", type=int, default=4, help="DataLoader worker count.")
     parser.add_argument(
@@ -466,82 +478,82 @@ def parse_args() -> argparse.Namespace:
     return parsed_args
 
 
-def run_optuna_trials(
-    args: argparse.Namespace,
-    train_dataset: Dataset,
-    val_dataset: Dataset,
-    test_dataset: Dataset,
-    target_num_classes: int,
-    device: torch.device,
-    eval_batch_size: int,
-) -> optuna.study.Study:
-    """Use Optuna to search over batch size, learning rate, dropout, and weight decay."""
-    study = optuna.create_study(direction="maximize")
+# def run_optuna_trials(
+#     args: argparse.Namespace,
+#     train_dataset: Dataset,
+#     val_dataset: Dataset,
+#     test_dataset: Dataset,
+#     target_num_classes: int,
+#     device: torch.device,
+#     eval_batch_size: int,
+# ) -> optuna.study.Study:
+#     """Use Optuna to search over batch size, learning rate, dropout, and weight decay."""
+#     study = optuna.create_study(direction="maximize")
 
-    def objective(trial: optuna.trial.Trial) -> float:
-        dropout = trial.suggest_float("dropout", 0.1, 0.5)
-        lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
-        weight_decay = trial.suggest_float("weight_decay", 0.0, 1e-2)
-        # batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
-        batch_size = args.batch_size
+#     def objective(trial: optuna.trial.Trial) -> float:
+#         dropout = trial.suggest_float("dropout", 0.1, 0.5)
+#         lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
+#         weight_decay = trial.suggest_float("weight_decay", 0.0, 1e-2)
+#         # batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
+#         batch_size = args.batch_size
 
-        train_loader = create_data_loader(
-            train_dataset, batch_size, args.num_workers, device, shuffle=True
-        )
-        model = FaceClassifier(num_classes=target_num_classes, dropout=dropout).to(device)
-        LOGGER.info("Model Architecture: %s", model)
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-        run_training_epochs(
-            model,
-            train_loader,
-            optimizer,
-            criterion,
-            device,
-            args.epochs,
-            target_num_classes,
-            log_metrics=False,
-        )
+#         train_loader = create_data_loader(
+#             train_dataset, batch_size, args.num_workers, device, shuffle=True
+#         )
+#         model = FaceClassifier(num_classes=target_num_classes, dropout=dropout).to(device)
+#         LOGGER.info("Model Architecture: %s", model)
+#         criterion = nn.CrossEntropyLoss()
+#         optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+#         run_training_epochs(
+#             model,
+#             train_loader,
+#             optimizer,
+#             criterion,
+#             device,
+#             args.epochs,
+#             target_num_classes,
+#             log_metrics=False,
+#         )
 
-        val_loader = create_data_loader(
-            val_dataset, eval_batch_size, args.num_workers, device, shuffle=False
-        )
-        val_loss, val_accuracy, val_f1 = evaluate_model(
-            model, val_loader, device, target_num_classes, criterion
-        )
+#         val_loader = create_data_loader(
+#             val_dataset, eval_batch_size, args.num_workers, device, shuffle=False
+#         )
+#         val_loss, val_accuracy, val_f1 = evaluate_model(
+#             model, val_loader, device, target_num_classes, criterion
+#         )
 
-        inference_loader = create_data_loader(
-            test_dataset, eval_batch_size, args.num_workers, device, shuffle=False
-        )
-        min_latency, max_latency, avg_latency = measure_inference_latency(
-            model, inference_loader, device
-        )
-        trial.set_user_attr("val_accuracy", val_accuracy)
-        trial.set_user_attr("val_f1", val_f1)
-        trial.set_user_attr("val_loss", val_loss)
-        trial.set_user_attr("min_latency", min_latency)
-        trial.set_user_attr("max_latency", max_latency)
-        trial.set_user_attr("avg_latency", avg_latency)
+#         inference_loader = create_data_loader(
+#             test_dataset, eval_batch_size, args.num_workers, device, shuffle=False
+#         )
+#         min_latency, max_latency, avg_latency = measure_inference_latency(
+#             model, inference_loader, device
+#         )
+#         trial.set_user_attr("val_accuracy", val_accuracy)
+#         trial.set_user_attr("val_f1", val_f1)
+#         trial.set_user_attr("val_loss", val_loss)
+#         trial.set_user_attr("min_latency", min_latency)
+#         trial.set_user_attr("max_latency", max_latency)
+#         trial.set_user_attr("avg_latency", avg_latency)
 
-        LOGGER.info(
-            "Optuna trial %d | val_loss=%.4f | val_acc=%.4f | val_f1=%.4f | batch_size=%d | dropout=%.2f | lr=%.5f | "
-            "weight_decay=%.5f | lat(min/avg/max)=%.6f/%.6f/%.6f",
-            trial.number,
-            val_loss,
-            val_accuracy,
-            val_f1,
-            batch_size,
-            dropout,
-            lr,
-            weight_decay,
-            min_latency,
-            avg_latency,
-            max_latency,
-        )
-        return val_accuracy
+#         LOGGER.info(
+#             "Optuna trial %d | val_loss=%.4f | val_acc=%.4f | val_f1=%.4f | batch_size=%d | dropout=%.2f | lr=%.5f | "
+#             "weight_decay=%.5f | lat(min/avg/max)=%.6f/%.6f/%.6f",
+#             trial.number,
+#             val_loss,
+#             val_accuracy,
+#             val_f1,
+#             batch_size,
+#             dropout,
+#             lr,
+#             weight_decay,
+#             min_latency,
+#             avg_latency,
+#             max_latency,
+#         )
+#         return val_accuracy
 
-    study.optimize(objective, n_trials=args.optuna_trials)
-    return study
+#     study.optimize(objective, n_trials=args.optuna_trials)
+#     return study
 
 
 def set_seed(seed: int) -> None:
@@ -603,42 +615,42 @@ def main() -> None:
     selected_lr = args.lr
     selected_weight_decay = args.weight_decay
 
-    if args.optuna_trials > 0:
-        study = run_optuna_trials(
-            args,
-            train_dataset,
-            val_dataset,
-            test_dataset,
-            target_num_classes,
-            device,
-            eval_batch_size,
-        )
-        best_trial = study.best_trial
-        best_params = best_trial.params
-        selected_batch_size = best_params.get("batch_size", selected_batch_size)
-        selected_dropout = best_params.get("dropout", selected_dropout)
-        selected_lr = best_params.get("lr", selected_lr)
-        selected_weight_decay = best_params.get("weight_decay", selected_weight_decay)
-        LOGGER.info(
-            "Optuna best trial %d | accuracy=%.4f | dropout=%.3f | lr=%.5f | weight_decay=%.5f",
-            best_trial.number,
-            best_trial.value,
-            selected_dropout,
-            selected_lr,
-            selected_weight_decay,
-        )
-        LOGGER.info(
-            "Best trial inference latency (s): min=%.6f | avg=%.6f | max=%.6f",
-            best_trial.user_attrs.get("min_latency", 0.0),
-            best_trial.user_attrs.get("avg_latency", 0.0),
-            best_trial.user_attrs.get("max_latency", 0.0),
-        )
-        LOGGER.info(
-            "Best trial validation metrics | loss=%.4f | accuracy=%.4f | f1=%.4f",
-            best_trial.user_attrs.get("val_loss", 0.0),
-            best_trial.user_attrs.get("val_accuracy", 0.0),
-            best_trial.user_attrs.get("val_f1", 0.0),
-        )
+    # if args.optuna_trials > 0:
+    #     study = run_optuna_trials(
+    #         args,
+    #         train_dataset,
+    #         val_dataset,
+    #         test_dataset,
+    #         target_num_classes,
+    #         device,
+    #         eval_batch_size,
+    #     )
+    #     best_trial = study.best_trial
+    #     best_params = best_trial.params
+    #     selected_batch_size = best_params.get("batch_size", selected_batch_size)
+    #     selected_dropout = best_params.get("dropout", selected_dropout)
+    #     selected_lr = best_params.get("lr", selected_lr)
+    #     selected_weight_decay = best_params.get("weight_decay", selected_weight_decay)
+    #     LOGGER.info(
+    #         "Optuna best trial %d | accuracy=%.4f | dropout=%.3f | lr=%.5f | weight_decay=%.5f",
+    #         best_trial.number,
+    #         best_trial.value,
+    #         selected_dropout,
+    #         selected_lr,
+    #         selected_weight_decay,
+    #     )
+    #     LOGGER.info(
+    #         "Best trial inference latency (s): min=%.6f | avg=%.6f | max=%.6f",
+    #         best_trial.user_attrs.get("min_latency", 0.0),
+    #         best_trial.user_attrs.get("avg_latency", 0.0),
+    #         best_trial.user_attrs.get("max_latency", 0.0),
+    #     )
+    #     LOGGER.info(
+    #         "Best trial validation metrics | loss=%.4f | accuracy=%.4f | f1=%.4f",
+    #         best_trial.user_attrs.get("val_loss", 0.0),
+    #         best_trial.user_attrs.get("val_accuracy", 0.0),
+    #         best_trial.user_attrs.get("val_f1", 0.0),
+    #     )
 
     train_loader = create_data_loader(
         train_dataset, selected_batch_size, args.num_workers, device, shuffle=True
@@ -666,6 +678,8 @@ def main() -> None:
         device,
         args.epochs,
         target_num_classes,
+        val_loader=val_loader,
+        val_num_classes=target_num_classes,
     )
     LOGGER.info(
         "Final training metrics | loss=%.4f | accuracy=%.4f | f1=%.4f",
@@ -675,6 +689,7 @@ def main() -> None:
     )
 
     val_loss, val_acc, val_f1 = evaluate_model(model, val_loader, device, target_num_classes, criterion)
+    obj_metrics["validation_loss"].append(val_loss)
     LOGGER.info("Validation metrics | loss=%.4f | accuracy=%.4f | f1=%.4f", val_loss, val_acc, val_f1)
     test_loss, test_acc, test_f1 = evaluate_model(model, test_loader, device, target_num_classes, criterion)
     LOGGER.info("Test metrics | loss=%.4f | accuracy=%.4f | f1=%.4f", test_loss, test_acc, test_f1)
