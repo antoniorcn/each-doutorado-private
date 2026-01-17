@@ -77,6 +77,38 @@ def build_transforms(height: int, width: int) -> transforms.Compose:
 class FaceClassifier(nn.Module):
     """Simple CNN block followed by a two-layer classifier ending in softmax logits."""
 
+    # def __init__(
+    #     self,
+    #     num_classes: int,
+    #     in_channels: int = 1,
+    #     dropout: float = 0.3,
+    #     feature_dim: int = 16536,
+    # ):
+    #     super().__init__()
+    #     self.cnn = nn.Sequential(
+    #         nn.Conv2d(in_channels, 128, kernel_size=3, padding=1),
+    #         nn.ReLU(),
+    #         nn.MaxPool2d(8),
+    #         # nn.Conv2d(64, 128, kernel_size=3, padding=1),
+    #         # nn.ReLU(),
+    #         # nn.MaxPool2d(2),
+    #         # nn.Conv2d(32, 64, kernel_size=3, padding=1),
+    #         # nn.ReLU(inplace=True),
+    #         # nn.MaxPool2d(2),
+    #         # nn.Conv2d(64, 128, kernel_size=3, padding=1),
+    #         # nn.ReLU(inplace=True),
+    #         # nn.AdaptiveAvgPool2d(1),
+    #     )
+    #     self.classifier = nn.Sequential(
+    #         nn.Flatten(),
+    #         nn.Linear(32768, feature_dim),
+    #         nn.ReLU(),
+    #         # nn.Linear(feature_dim, num_classes * 2),
+    #         # nn.ReLU(),
+    #         nn.Dropout(dropout),
+    #         nn.Linear(feature_dim, num_classes),
+    #     )
+        
     def __init__(
         self,
         num_classes: int,
@@ -86,9 +118,10 @@ class FaceClassifier(nn.Module):
     ):
         super().__init__()
         self.cnn = nn.Sequential(
-            nn.Conv2d(in_channels, 128, kernel_size=3, padding=1),
-            nn.ReLU(),
-            nn.MaxPool2d(8),
+            # nn.Conv2d(in_channels, 32, kernel_size=3),
+            # nn.MaxPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(1, 32, kernel_size=3),
+            nn.MaxPool2d(kernel_size=2, stride=2),
             # nn.Conv2d(64, 128, kernel_size=3, padding=1),
             # nn.ReLU(),
             # nn.MaxPool2d(2),
@@ -101,7 +134,7 @@ class FaceClassifier(nn.Module):
         )
         self.classifier = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(32768, feature_dim),
+            nn.Linear(32 * 31 * 31, feature_dim),
             nn.ReLU(),
             # nn.Linear(feature_dim, num_classes * 2),
             # nn.ReLU(),
@@ -201,7 +234,6 @@ def train_epoch(
     all_labels = []
     for batch_index, batch in enumerate(loader):
         LOGGER.info("Carregando batch: %d", batch_index)
-        LOGGER.debug("Carregando batch do loader: %s", batch)
         inputs, labels = batch
         inputs = inputs.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
@@ -374,8 +406,6 @@ def stratified_split_dataset(
         LOGGER.debug("Label %d Shuffled %s", label, shuffled)
         train_count = int(len(shuffled) * train_frac)
         val_count = int(len(shuffled) * val_frac)
-        # rest_count = int(len(shuffled) * (1.0 - train_frac))
-        # test_count = rest_count - val_count
 
         LOGGER.debug("Sizes: Trainning %d    Validation %d    Tests %d", train_count, val_count, len(shuffled) - train_count - val_count)
         splits = [
@@ -414,12 +444,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=64, help="Samples per batch.")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate for Adam.")
     parser.add_argument("--weight-decay", type=float, default=0.0, help="L2 regularization.")
-    # parser.add_argument(
-    #     "--optuna-trials",
-    #     type=int,
-    #     default=0,
-    #     help="Number of Optuna trials to run; set >0 to enable tuning.",
-    # )
     parser.add_argument("--dropout", type=float, default=0.3, help="Dropout in classifier.")
     parser.add_argument("--num-workers", type=int, default=4, help="DataLoader worker count.")
     parser.add_argument(
@@ -476,85 +500,6 @@ def parse_args() -> argparse.Namespace:
 
     parsed_args = parser.parse_args()
     return parsed_args
-
-
-# def run_optuna_trials(
-#     args: argparse.Namespace,
-#     train_dataset: Dataset,
-#     val_dataset: Dataset,
-#     test_dataset: Dataset,
-#     target_num_classes: int,
-#     device: torch.device,
-#     eval_batch_size: int,
-# ) -> optuna.study.Study:
-#     """Use Optuna to search over batch size, learning rate, dropout, and weight decay."""
-#     study = optuna.create_study(direction="maximize")
-
-#     def objective(trial: optuna.trial.Trial) -> float:
-#         dropout = trial.suggest_float("dropout", 0.1, 0.5)
-#         lr = trial.suggest_float("lr", 1e-4, 1e-2, log=True)
-#         weight_decay = trial.suggest_float("weight_decay", 0.0, 1e-2)
-#         # batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
-#         batch_size = args.batch_size
-
-#         train_loader = create_data_loader(
-#             train_dataset, batch_size, args.num_workers, device, shuffle=True
-#         )
-#         model = FaceClassifier(num_classes=target_num_classes, dropout=dropout).to(device)
-#         LOGGER.info("Model Architecture: %s", model)
-#         criterion = nn.CrossEntropyLoss()
-#         optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-#         run_training_epochs(
-#             model,
-#             train_loader,
-#             optimizer,
-#             criterion,
-#             device,
-#             args.epochs,
-#             target_num_classes,
-#             log_metrics=False,
-#         )
-
-#         val_loader = create_data_loader(
-#             val_dataset, eval_batch_size, args.num_workers, device, shuffle=False
-#         )
-#         val_loss, val_accuracy, val_f1 = evaluate_model(
-#             model, val_loader, device, target_num_classes, criterion
-#         )
-
-#         inference_loader = create_data_loader(
-#             test_dataset, eval_batch_size, args.num_workers, device, shuffle=False
-#         )
-#         min_latency, max_latency, avg_latency = measure_inference_latency(
-#             model, inference_loader, device
-#         )
-#         trial.set_user_attr("val_accuracy", val_accuracy)
-#         trial.set_user_attr("val_f1", val_f1)
-#         trial.set_user_attr("val_loss", val_loss)
-#         trial.set_user_attr("min_latency", min_latency)
-#         trial.set_user_attr("max_latency", max_latency)
-#         trial.set_user_attr("avg_latency", avg_latency)
-
-#         LOGGER.info(
-#             "Optuna trial %d | val_loss=%.4f | val_acc=%.4f | val_f1=%.4f | batch_size=%d | dropout=%.2f | lr=%.5f | "
-#             "weight_decay=%.5f | lat(min/avg/max)=%.6f/%.6f/%.6f",
-#             trial.number,
-#             val_loss,
-#             val_accuracy,
-#             val_f1,
-#             batch_size,
-#             dropout,
-#             lr,
-#             weight_decay,
-#             min_latency,
-#             avg_latency,
-#             max_latency,
-#         )
-#         return val_accuracy
-
-#     study.optimize(objective, n_trials=args.optuna_trials)
-#     return study
-
 
 def set_seed(seed: int) -> None:
     torch.manual_seed(seed)
@@ -615,43 +560,6 @@ def main() -> None:
     selected_lr = args.lr
     selected_weight_decay = args.weight_decay
 
-    # if args.optuna_trials > 0:
-    #     study = run_optuna_trials(
-    #         args,
-    #         train_dataset,
-    #         val_dataset,
-    #         test_dataset,
-    #         target_num_classes,
-    #         device,
-    #         eval_batch_size,
-    #     )
-    #     best_trial = study.best_trial
-    #     best_params = best_trial.params
-    #     selected_batch_size = best_params.get("batch_size", selected_batch_size)
-    #     selected_dropout = best_params.get("dropout", selected_dropout)
-    #     selected_lr = best_params.get("lr", selected_lr)
-    #     selected_weight_decay = best_params.get("weight_decay", selected_weight_decay)
-    #     LOGGER.info(
-    #         "Optuna best trial %d | accuracy=%.4f | dropout=%.3f | lr=%.5f | weight_decay=%.5f",
-    #         best_trial.number,
-    #         best_trial.value,
-    #         selected_dropout,
-    #         selected_lr,
-    #         selected_weight_decay,
-    #     )
-    #     LOGGER.info(
-    #         "Best trial inference latency (s): min=%.6f | avg=%.6f | max=%.6f",
-    #         best_trial.user_attrs.get("min_latency", 0.0),
-    #         best_trial.user_attrs.get("avg_latency", 0.0),
-    #         best_trial.user_attrs.get("max_latency", 0.0),
-    #     )
-    #     LOGGER.info(
-    #         "Best trial validation metrics | loss=%.4f | accuracy=%.4f | f1=%.4f",
-    #         best_trial.user_attrs.get("val_loss", 0.0),
-    #         best_trial.user_attrs.get("val_accuracy", 0.0),
-    #         best_trial.user_attrs.get("val_f1", 0.0),
-    #     )
-
     train_loader = create_data_loader(
         train_dataset, selected_batch_size, args.num_workers, device, shuffle=True
     )
@@ -665,6 +573,14 @@ def main() -> None:
         device
     )
     LOGGER.info("Model Architecture: %s", model)
+    total_params = 0
+    treinnable_params = 0
+    for p in model.parameters():
+        total_params += p.numel()
+        if p.requires_grad:
+            treinnable_params += p.numel()
+    LOGGER.info("Parametros totais: %d", total_params)
+    LOGGER.info("Parametros treináveis: %d", treinnable_params)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(
         model.parameters(), lr=selected_lr, weight_decay=selected_weight_decay
@@ -697,7 +613,9 @@ def main() -> None:
     min_latency, max_latency, avg_latency = measure_inference_latency(
         model, test_loader, device
     )
-    torch.save(model.state_dict(), args.model_out)
+
+    # torch.save(model.state_dict(), args.model_out)
+
     LOGGER.info(
         "Inference latency (s) | min=%.6f | max=%.6f | avg=%.6f",
         min_latency,
