@@ -1,0 +1,218 @@
+#VRML V2.0 utf8
+# Feito por Antonio Carvalho
+
+NavigationInfo { type [ "EXAMINE" "ANY" ] }
+Viewpoint { position 0 1.8 9 description "Frente" }
+Background { skyColor [ 0.6 0.8 1.0 ] }
+
+# Chao de gelo
+Transform {
+  translation 0 -0.05 0
+  children Shape {
+    appearance Appearance { material Material { diffuseColor 0.85 0.95 1 } }
+    geometry Box { size 8 0.1 8 }
+  }
+}
+
+DEF Penguin Group {
+  children [
+
+    # Corpo preto
+    Transform {
+      translation 0 1.5 0
+      scale 1 1.3 0.9
+      children Shape {
+        appearance Appearance { material Material { diffuseColor 0.05 0.05 0.08 } }
+        geometry Sphere { radius 1 }
+      }
+    }
+    # Barriga branca
+    Transform {
+      translation 0 1.4 0.35
+      scale 0.8 1.1 0.75
+      children Shape {
+        appearance Appearance { material Material { diffuseColor 1 1 1 } }
+        geometry Sphere { radius 1 }
+      }
+    }
+
+    # Cabeca (gira ao clicar)
+    DEF Head Transform {
+      translation 0 3.05 0
+      scale 1.0 1.0 1.0
+      children [
+        DEF HeadTouch TouchSensor { }
+        Shape {
+          appearance Appearance { material Material { diffuseColor 0.05 0.05 0.08 } }
+          geometry Sphere { radius 0.65 }
+        }
+        # Rosto branco
+        Transform {
+          translation 0 -0.05 0.3
+          scale 0.8 0.8 0.6
+          children Shape {
+            appearance Appearance { material Material { diffuseColor 1 1 1 } }
+            geometry Sphere { radius 0.6 }
+          }
+        }
+        # Bico (cone apontando para +Z)
+        Transform {
+          translation 0 -0.1 0.75
+          rotation 1 0 0 1.5708
+          children Shape {
+            appearance Appearance { material Material { diffuseColor 1 0.6 0 } }
+            geometry Cone { bottomRadius 0.15 height 0.4 }
+          }
+        }
+        # Olhos
+        Transform {
+          translation -0.22 0.15 0.52
+          children Shape {
+            appearance Appearance { material Material { diffuseColor 0 0 0 } }
+            geometry Sphere { radius 0.08 }
+          }
+        }
+        Transform {
+          translation 0.22 0.15 0.52
+          children Shape {
+            appearance Appearance { material Material { diffuseColor 0 0 0 } }
+            geometry Sphere { radius 0.08 }
+          }
+        }
+        # Cartola (cilindro)
+        Transform {
+          translation 0 0.75 0
+          children [
+            Shape {
+              appearance Appearance { material Material { diffuseColor 0.8 0 0 } }
+              geometry Cylinder { radius 0.3 height 0.4 }
+            }
+            Transform {
+              translation 0 -0.2 0
+              children Shape {
+                appearance Appearance { material Material { diffuseColor 0.8 0 0 } }
+                geometry Cylinder { radius 0.5 height 0.05 }
+              }
+            }
+          ]
+        }
+      ]
+    }
+
+    # Asa esquerda (pivo no ombro)
+    DEF WingL Transform {
+      translation -1.0 2.3 0
+      children [
+        DEF WingLTouch TouchSensor { }
+        Transform {
+          translation -0.1 -0.5 0
+          children Shape {
+            appearance Appearance { material Material { diffuseColor 0.05 0.05 0.08 } }
+            # geometry Box { size 0.15 1.0 0.5 }
+            geometry Cylinder { radius 0.15 height 1.0 }
+          }
+        }
+      ]
+    }
+    # Asa direita
+    DEF WingR Transform {
+      translation 1.0 2.3 0
+      children [
+        DEF WingRTouch TouchSensor { }
+        Transform {
+          translation 0.1 -0.5 0
+          children Shape {
+            appearance Appearance { material Material { diffuseColor 0.05 0.05 0.08 } }
+            # geometry Box { size 0.15 1.0 0.5 }
+            geometry Cylinder { radius 0.15 height 1.0 }
+          }
+        }
+      ]
+    }
+
+    # Pata esquerda (pivo no quadril; balanca)
+    DEF PernaE Transform {
+      translation -0.4 0.35 0
+      children [
+        Transform {
+          translation 0 -0.15 0
+          children Shape {
+            appearance Appearance { material Material { diffuseColor 1 0.6 0 } }
+            geometry Cylinder { radius 0.1 height 0.3 }
+          }
+        }
+        Transform {
+          translation 0 -0.28 0.25
+          children Shape {
+            appearance Appearance { material Material { diffuseColor 1 0.6 0 } }
+            geometry Box { size 0.5 0.1 0.7 }
+          }
+        }
+      ]
+    }
+    # Pata direita
+    DEF PernaD Transform {
+      translation 0.4 0.35 0
+      children [
+        Transform {
+          translation 0 -0.15 0
+          children Shape {
+            appearance Appearance { material Material { diffuseColor 1 0.6 0 } }
+            geometry Cylinder { radius 0.1 height 0.3 }
+          }
+        }
+        Transform {
+          translation 0 -0.28 0.25
+          children Shape {
+            appearance Appearance { material Material { diffuseColor 1 0.6 0 } }
+            geometry Box { size 0.5 0.1 0.7 }
+          }
+        }
+      ]
+    }
+  ]
+}
+
+# ---------- Animacao das patas (loop continuo, so as patas se movem) ----------
+DEF RelogioPernas TimeSensor { cycleInterval 1.0 loop TRUE }
+DEF InterpPernaE OrientationInterpolator {
+  key [ 0 0.25 0.5 0.75 1 ]
+  keyValue [ 1 0 0 0, 1 0 0 0.5, 1 0 0 0, 1 0 0 -0.5, 1 0 0 0 ]
+}
+DEF InterpPernaD OrientationInterpolator {
+  key [ 0 0.25 0.5 0.75 1 ]
+  keyValue [ 1 0 0 0, 1 0 0 -0.5, 1 0 0 0, 1 0 0 0.5, 1 0 0 0 ]
+}
+ROUTE RelogioPernas .fraction_changed TO InterpPernaE .set_fraction
+ROUTE RelogioPernas .fraction_changed TO InterpPernaD .set_fraction
+ROUTE InterpPernaE .value_changed TO PernaE .set_rotation
+ROUTE InterpPernaD .value_changed TO PernaD .set_rotation
+
+# ---------- Clique na cabeca: gira 360 graus ----------
+DEF HeadClock TimeSensor { cycleInterval 2 loop FALSE }
+DEF HeadInterp OrientationInterpolator {
+  key [ 0 0.15 0.25 0.5 0.65 0.75 0.85 0.9 1 ]
+  keyValue [ 0 1 0 0, 0 1 0 1.5708, 0 1 0 3.1416, 0 1 0 4.7124, 0 1 0 6.2832, 0 1 0 4.7124, 0 1 0 3.1416, 0 1 0 1.5708, 0 1 0 0]
+}
+ROUTE HeadTouch .touchTime TO HeadClock .set_startTime
+ROUTE HeadClock .fraction_changed TO HeadInterp .set_fraction
+ROUTE HeadInterp .value_changed TO Head .set_rotation
+
+# ---------- Clique nas asas: sobem e descem ----------
+DEF WingLClock TimeSensor { cycleInterval 1.5 loop FALSE }
+DEF WingLInterp OrientationInterpolator {
+  key [ 0 0.5 1 ]
+  keyValue [ 0 0 1 0, 0 0 1 -2.4, 0 0 1 0 ]
+}
+ROUTE WingLTouch .touchTime TO WingLClock .set_startTime
+ROUTE WingLClock .fraction_changed TO WingLInterp .set_fraction
+ROUTE WingLInterp .value_changed TO WingL .set_rotation
+
+DEF WingRClock TimeSensor { cycleInterval 1.5 loop FALSE }
+DEF WingRInterp OrientationInterpolator {
+  key [ 0 0.5 1 ]
+  keyValue [ 0 0 1 0, 0 0 1 2.4, 0 0 1 0 ]
+}
+ROUTE WingRTouch .touchTime TO WingRClock .set_startTime
+ROUTE WingRClock .fraction_changed TO WingRInterp .set_fraction
+ROUTE WingRInterp .value_changed TO WingR .set_rotation
